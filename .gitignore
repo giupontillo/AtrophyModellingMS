@@ -42,3 +42,14 @@ Thumbs.db
 # repos #
 #########
 repos/
+.Rproj.user
+
+# data and output #
+#########
+data/
+output/
+
+# environment #
+#########
+renv/
+renv.lock

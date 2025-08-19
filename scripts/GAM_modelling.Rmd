@@ -1,0 +1,2938 @@
+---
+title: "OrganizeData"
+author: "Giuseppe Pontillo"
+date: '2024-11'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/data/anw/knw-work/g.pontillo/predictive_modelling/code/stats/AtrophyModelling")
+system("export LD_LIBRARY_PATH=/opt/aumc-apps-eb/software/Anaconda3/2024.02-1/lib")
+packages <- c("dplyr", "ggplot2", "here", "corrplot", "nlme", "psych", "effsize", "janitor", "R.matlab", "reticulate","rstudioapi")
+lapply(packages, library, character.only = TRUE)
+use_condaenv("atrophymodelling")
+# openProject(path = "/data/anw/knw-work/g.pontillo/predictive_modelling/code/stats/AtrophyModelling/AtrophyModelling.Rproj", newSession = FALSE)
+```
+
+```{r import and transform data for GAM modelling}
+# atrophy rates
+
+
+# baseline atrophy
+
+
+# structural centrality
+
+
+# functional centrality
+
+
+# parcel disconnection
+
+
+# structural neighbour atrophy
+
+
+# functional neighbour atrophy
+
+
+# GE neighbour atrophy
+
+
+# 
+
+
+
+
+
+### Clinical database
+data <- read.csv(here::here("data/data_atrophy_long.csv"), header = TRUE, sep = ",")
+data[c('Site','ClinicalPhenotype','DMT')] <- lapply(data[c('Site','ClinicalPhenotype','DMT')], factor)
+data$Sex <- factor(data$Sex, levels = c("female", "male"))
+data$Group <- factor(data$Group, levels = c("HC", "MS"))
+data$Excluded <- factor(data$Excluded, levels = c("0", "1"))
+data$Site <- factor(data$Site, levels = c("amsterdam", "graz", "prague"))
+data[c('DoB','DateMRI','DateOfOnset')] <- lapply(data[c('DoB','DateMRI','DateOfOnset')], as.Date, format = "%d/%m/%Y")
+data <- data[data$Excluded == "0",]
+
+## sMRI derivatives
+# import cortical labels
+labels_schaefer100_7networks <- read.csv(here::here("data/hcp_connectivity/funcLabels_ctx_schaefer_100.csv"), header = FALSE, sep = ",")
+labels_schaefer400_7networks <- read.csv(here::here("data/hcp_connectivity/funcLabels_ctx_schaefer_400.csv"), header = FALSE, sep = ",")
+# import and save vertex-wise thickness
+FS_subjects_dir <- "/data/anw/knw-work/g.pontillo/predictive_modelling/atrophy_long/derivatives/freesurfer"
+# vertexwise_thickness <- SURFvextract(sdirpath = FS_subjects_dir, filename = here::here("data/atrophy_long_VertexwiseThickness.Rds"), measure="thickness", template = "fsaverage5")
+vertexwise_thickness <- readRDS(here::here("data/atrophy_long_VertexwiseThickness.Rds"))
+# import aseg and merge FS
+aseg <- fs_stats(sdirpath = FS_subjects_dir, ROImeasure = "Volume_mm3")
+colnames(aseg)[1] <- "FullID"
+df_thickness <- data.frame(vertexwise_thickness)
+colnames(df_thickness)[1] <- "FullID"
+data_FS <- merge(df_thickness, aseg, by = "FullID")
+# surf to atlas
+CT_schaefer100 <- surf_to_atlas(data_FS[, grep("^X+[0-9]$|^X.*.[0-9]$", colnames(data_FS))], 4, mode = "mean")
+colnames(CT_schaefer100) <- paste0("schaefer100_", labels_schaefer100_7networks, "_CT")
+CT_schaefer400 <- surf_to_atlas(data_FS[, grep("^X+[0-9]$|^X.*.[0-9]$", colnames(data_FS))], 6, mode = "mean")
+colnames(CT_schaefer400) <- paste0("schaefer400_", labels_schaefer400_7networks, "_CT")
+data_FS <- cbind(data_FS, CT_schaefer100, CT_schaefer400)
+data_FS <- data_FS[, -grep("^X+[0-9]$|^X.*.[0-9]$", colnames(data_FS))]
+# create baseline and longitudinal
+data_FS_baseline <- data_FS[grep("^sub.*ses-Y05$|^sub.*ses-01$", data_FS$FullID),]
+data_FS_long <- data_FS[grep("^sub.*ses-.*.long.sub.*", data_FS$FullID),]
+data_FS_long$FullID <- gsub(".long.*$", "", data_FS_long$FullID)
+
+### merge clinical and sMRI databases
+df_baseline <- merge(data, data_FS_baseline, by = "FullID")
+df_baseline <- clean_names(df_baseline)
+df_long <- merge(data, data_FS_long, by = "FullID")
+df_long <- clean_names(df_long)
+
+### w score
+## long
+# define regions
+volumes <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen",
+                             "thalamus"),
+                   sep = "_"),
+             paste("right", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen",
+                             "thalamus"),
+                   sep = "_"))
+CT_schaefer100 <- colnames(df_long)[grep("^schaefer100.*.ct$", colnames(df_long))]
+CT_schaefer400 <- colnames(df_long)[grep("^schaefer400.*.ct$", colnames(df_long))]
+# w score volumes/CT based on baseline HCs
+for (i in volumes){
+  MDL <- lm(get(i) ~ age + sex + estimated_total_intra_cranial_vol + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_long[, paste0(i, "_wscore")] <- (df_long[, i] - predict(MDL, df_long)) / sd(MDL$residuals)
+  }
+for (i in CT_schaefer100){
+  MDL <- lm(get(i) ~ age + sex + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_long[, paste0(i, "_wscore")] <- (df_long[, i] - predict(MDL, df_long)) / sd(MDL$residuals)
+  }
+for (i in CT_schaefer400){
+  MDL <- lm(get(i) ~ age + sex + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_long[, paste0(i, "_wscore")] <- (df_long[, i] - predict(MDL, df_long)) / sd(MDL$residuals)
+  }
+## baseline
+# define regions
+volumes <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen",
+                             "thalamus"),
+                   sep = "_"),
+             paste("right", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen",
+                             "thalamus"),
+                   sep = "_"))
+CT_schaefer100 <- colnames(df_baseline)[grep("^schaefer100.*.ct$", colnames(df_baseline))]
+CT_schaefer400 <- colnames(df_baseline)[grep("^schaefer400.*.ct$", colnames(df_baseline))]
+# w score volumes/CT based on baseline HCs
+for (i in volumes){
+  MDL <- lm(get(i) ~ age + sex + estimated_total_intra_cranial_vol + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_baseline[, paste0(i, "_wscore")] <- (df_baseline[, i] - predict(MDL, df_baseline)) / sd(MDL$residuals)
+  }
+for (i in CT_schaefer100){
+  MDL <- lm(get(i) ~ age + sex + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_baseline[, paste0(i, "_wscore")] <- (df_baseline[, i] - predict(MDL, df_baseline)) / sd(MDL$residuals)
+  }
+for (i in CT_schaefer400){
+  MDL <- lm(get(i) ~ age + sex + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_baseline[, paste0(i, "_wscore")] <- (df_baseline[, i] - predict(MDL, df_baseline)) / sd(MDL$residuals)
+  }
+### write out
+saveRDS(df_long, file = here::here("data/df_long.Rds"))
+saveRDS(df_baseline, file = here::here("data/df_baseline.Rds"))
+write.csv(df_long, here::here("data/df_long.csv"), row.names = FALSE)
+write.csv(df_baseline, here::here("data/df_baseline.csv"), row.names = FALSE)
+```
+
+
+
+
+
+
+
+
+
+
+
+```{r import/transform/merge clinical and structural MRI data}
+### Clinical database
+data <- read.csv(here::here("data/data_atrophy_long.csv"), header = TRUE, sep = ",")
+data[c('Site','ClinicalPhenotype','DMT')] <- lapply(data[c('Site','ClinicalPhenotype','DMT')], factor)
+data$Sex <- factor(data$Sex, levels = c("female", "male"))
+data$Group <- factor(data$Group, levels = c("HC", "MS"))
+data$Excluded <- factor(data$Excluded, levels = c("0", "1"))
+data$Site <- factor(data$Site, levels = c("amsterdam", "graz", "prague"))
+data[c('DoB','DateMRI','DateOfOnset')] <- lapply(data[c('DoB','DateMRI','DateOfOnset')], as.Date, format = "%d/%m/%Y")
+data <- data[data$Excluded == "0",]
+
+## sMRI derivatives
+# import cortical labels
+labels_schaefer100_7networks <- read.csv(here::here("data/hcp_connectivity/funcLabels_ctx_schaefer_100.csv"), header = FALSE, sep = ",")
+labels_schaefer400_7networks <- read.csv(here::here("data/hcp_connectivity/funcLabels_ctx_schaefer_400.csv"), header = FALSE, sep = ",")
+# import and save vertex-wise thickness
+FS_subjects_dir <- "/data/anw/knw-work/g.pontillo/predictive_modelling/atrophy_long/derivatives/freesurfer"
+# vertexwise_thickness <- SURFvextract(sdirpath = FS_subjects_dir, filename = here::here("data/atrophy_long_VertexwiseThickness.Rds"), measure="thickness", template = "fsaverage5")
+vertexwise_thickness <- readRDS(here::here("data/atrophy_long_VertexwiseThickness.Rds"))
+# import aseg and merge FS
+aseg <- fs_stats(sdirpath = FS_subjects_dir, ROImeasure = "Volume_mm3")
+colnames(aseg)[1] <- "FullID"
+df_thickness <- data.frame(vertexwise_thickness)
+colnames(df_thickness)[1] <- "FullID"
+data_FS <- merge(df_thickness, aseg, by = "FullID")
+# surf to atlas
+CT_schaefer100 <- surf_to_atlas(data_FS[, grep("^X+[0-9]$|^X.*.[0-9]$", colnames(data_FS))], 4, mode = "mean")
+colnames(CT_schaefer100) <- paste0("schaefer100_", labels_schaefer100_7networks, "_CT")
+CT_schaefer400 <- surf_to_atlas(data_FS[, grep("^X+[0-9]$|^X.*.[0-9]$", colnames(data_FS))], 6, mode = "mean")
+colnames(CT_schaefer400) <- paste0("schaefer400_", labels_schaefer400_7networks, "_CT")
+data_FS <- cbind(data_FS, CT_schaefer100, CT_schaefer400)
+data_FS <- data_FS[, -grep("^X+[0-9]$|^X.*.[0-9]$", colnames(data_FS))]
+# create baseline and longitudinal
+data_FS_baseline <- data_FS[grep("^sub.*ses-Y05$|^sub.*ses-01$", data_FS$FullID),]
+data_FS_long <- data_FS[grep("^sub.*ses-.*.long.sub.*", data_FS$FullID),]
+data_FS_long$FullID <- gsub(".long.*$", "", data_FS_long$FullID)
+
+### merge clinical and sMRI databases
+df_baseline <- merge(data, data_FS_baseline, by = "FullID")
+df_baseline <- clean_names(df_baseline)
+df_long <- merge(data, data_FS_long, by = "FullID")
+df_long <- clean_names(df_long)
+
+### w score
+## long
+# define regions
+volumes <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen",
+                             "thalamus"),
+                   sep = "_"),
+             paste("right", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen",
+                             "thalamus"),
+                   sep = "_"))
+CT_schaefer100 <- colnames(df_long)[grep("^schaefer100.*.ct$", colnames(df_long))]
+CT_schaefer400 <- colnames(df_long)[grep("^schaefer400.*.ct$", colnames(df_long))]
+# w score volumes/CT based on baseline HCs
+for (i in volumes){
+  MDL <- lm(get(i) ~ age + sex + estimated_total_intra_cranial_vol + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_long[, paste0(i, "_wscore")] <- (df_long[, i] - predict(MDL, df_long)) / sd(MDL$residuals)
+  }
+for (i in CT_schaefer100){
+  MDL <- lm(get(i) ~ age + sex + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_long[, paste0(i, "_wscore")] <- (df_long[, i] - predict(MDL, df_long)) / sd(MDL$residuals)
+  }
+for (i in CT_schaefer400){
+  MDL <- lm(get(i) ~ age + sex + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_long[, paste0(i, "_wscore")] <- (df_long[, i] - predict(MDL, df_long)) / sd(MDL$residuals)
+  }
+## baseline
+# define regions
+volumes <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen",
+                             "thalamus"),
+                   sep = "_"),
+             paste("right", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen",
+                             "thalamus"),
+                   sep = "_"))
+CT_schaefer100 <- colnames(df_baseline)[grep("^schaefer100.*.ct$", colnames(df_baseline))]
+CT_schaefer400 <- colnames(df_baseline)[grep("^schaefer400.*.ct$", colnames(df_baseline))]
+# w score volumes/CT based on baseline HCs
+for (i in volumes){
+  MDL <- lm(get(i) ~ age + sex + estimated_total_intra_cranial_vol + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_baseline[, paste0(i, "_wscore")] <- (df_baseline[, i] - predict(MDL, df_baseline)) / sd(MDL$residuals)
+  }
+for (i in CT_schaefer100){
+  MDL <- lm(get(i) ~ age + sex + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_baseline[, paste0(i, "_wscore")] <- (df_baseline[, i] - predict(MDL, df_baseline)) / sd(MDL$residuals)
+  }
+for (i in CT_schaefer400){
+  MDL <- lm(get(i) ~ age + sex + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+  df_baseline[, paste0(i, "_wscore")] <- (df_baseline[, i] - predict(MDL, df_baseline)) / sd(MDL$residuals)
+  }
+### write out
+saveRDS(df_long, file = here::here("data/df_long.Rds"))
+saveRDS(df_baseline, file = here::here("data/df_baseline.Rds"))
+write.csv(df_long, here::here("data/df_long.csv"), row.names = FALSE)
+write.csv(df_baseline, here::here("data/df_baseline.csv"), row.names = FALSE)
+```
+
+
+```{r atrophy mapping}
+### baseline atrophy
+df_baseline <- readRDS(here::here("data/df_baseline.Rds"))
+## SchaeferSubcortex 114 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"),
+          paste("right", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"))
+ctx <- colnames(df_baseline)[grep("^schaefer100.*.wscore$", colnames(df_baseline))]
+list <- append(ctx, paste0(sctx, "_wscore"))
+atrophy_mapping_individuals_wscore <- df_baseline[df_baseline$group=="MS", c("id",list)]
+column_index <- 2:(length(list)+1)
+atrophy_mapping_individuals_wscore[column_index] <- -1*atrophy_mapping_individuals_wscore[column_index] # flip so that more positive values correspond to greater atrophy
+atrophy_mapping_group_cohend <- atrophy_mapping_group_long_cohend <- atrophy_mapping_group_pvalue <- atrophy_mapping_group_long_pvalue <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group_cohend) <- colnames(atrophy_mapping_group_long_cohend) <- gsub(pattern = "_wscore", replacement = "_cohend", list)
+colnames(atrophy_mapping_group_pvalue) <- colnames(atrophy_mapping_group_long_pvalue) <- gsub(pattern = "_wscore", replacement = "_pvalue", list)
+df_long <- readRDS(here::here("data/df_long.Rds"))
+df_long <- df_long %>%
+  dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+df_long <- df_long[(df_long$n_scans>1 & df_long$group == "MS") | df_long$group == "HC",]
+df_baseline_long <- df_baseline[df_baseline$full_id %in% df_long$full_id,]
+for (i in 1:length(list)) {
+  d <- df_baseline[, list[i]]
+  f <- df_baseline[, "group"]
+  cohend <- effsize::cohen.d(d, f)
+  ttest <- t.test(df_baseline[df_baseline$group=="MS", list[i]], df_baseline[df_baseline$group=="HC", list[i]])
+  atrophy_mapping_group_cohend[,i] <- cohend$estimate
+  atrophy_mapping_group_pvalue[,i] <- ttest$p.value
+  }
+for (i in 1:length(list)) {
+  d <- df_baseline_long[, list[i]]
+  f <- df_baseline_long[, "group"]
+  cohend <- effsize::cohen.d(d, f)
+  ttest <- t.test(df_baseline_long[df_baseline_long$group=="MS", list[i]], df_baseline_long[df_baseline_long$group=="HC", list[i]])
+  atrophy_mapping_group_long_cohend[,i] <- cohend$estimate
+  atrophy_mapping_group_long_pvalue[,i] <- ttest$p.value
+  }
+atrophy_mapping_group_pvalue[1,] <- p.adjust(atrophy_mapping_group_pvalue[1,], method = "fdr")
+atrophy_mapping_group_long_pvalue[1,] <- p.adjust(atrophy_mapping_group_long_pvalue[1,], method = "fdr")
+# write out
+write.csv(atrophy_mapping_individuals_wscore, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_individuals_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_cohend, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_group_cohend.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_long_cohend, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_group_long_cohend.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_pvalue, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_group_pfdr.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_long_pvalue, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_group_long_pfdr.csv"), row.names = FALSE)
+## SchaferSubcortex 414 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"),
+          paste("right", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"))
+ctx <- colnames(df_baseline)[grep("^schaefer400.*.wscore$", colnames(df_baseline))]
+list <- append(ctx, paste0(sctx, "_wscore"))
+atrophy_mapping_individuals_wscore <- df_baseline[df_baseline$group=="MS", c("id",list)]
+column_index <- 2:(length(list)+1)
+atrophy_mapping_individuals_wscore[column_index] <- -1*atrophy_mapping_individuals_wscore[column_index] # flip so that more positive values correspond to greater atrophy
+atrophy_mapping_group_cohend <- atrophy_mapping_group_long_cohend <- atrophy_mapping_group_pvalue <- atrophy_mapping_group_long_pvalue <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group_cohend) <- colnames(atrophy_mapping_group_long_cohend) <- gsub(pattern = "_wscore", replacement = "_cohend", list)
+colnames(atrophy_mapping_group_pvalue) <- colnames(atrophy_mapping_group_long_pvalue) <- gsub(pattern = "_wscore", replacement = "_pvalue", list)
+df_long <- readRDS(here::here("data/df_long.Rds"))
+df_long <- df_long %>%
+dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+df_long <- df_long[(df_long$n_scans>1 & df_long$group == "MS") | df_long$group == "HC",]
+df_baseline_long <- df_baseline[df_baseline$full_id %in% df_long$full_id,]
+for (i in 1:length(list)) {
+  d <- df_baseline[, list[i]]
+  f <- df_baseline[, "group"]
+  cohend <- effsize::cohen.d(d, f)
+  ttest <- t.test(df_baseline[df_baseline$group=="MS", list[i]], df_baseline[df_baseline$group=="HC", list[i]])
+  atrophy_mapping_group_cohend[,i] <- cohend$estimate
+  atrophy_mapping_group_pvalue[,i] <- ttest$p.value
+  }
+for (i in 1:length(list)) {
+  d <- df_baseline_long[, list[i]]
+  f <- df_baseline_long[, "group"]
+  cohend <- effsize::cohen.d(d, f)
+  ttest <- t.test(df_baseline_long[df_baseline_long$group=="MS", list[i]], df_baseline_long[df_baseline_long$group=="HC", list[i]])
+  atrophy_mapping_group_long_cohend[,i] <- cohend$estimate
+  atrophy_mapping_group_long_pvalue[,i] <- ttest$p.value
+  }
+atrophy_mapping_group_pvalue[1,] <- p.adjust(atrophy_mapping_group_pvalue[1,], method = "fdr")
+atrophy_mapping_group_long_pvalue[1,] <- p.adjust(atrophy_mapping_group_long_pvalue[1,], method = "fdr")
+# write out
+write.csv(atrophy_mapping_individuals_wscore, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_individuals_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_cohend, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_group_cohend.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_long_cohend, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_group_long_cohend.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_pvalue, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_group_pfdr.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_long_pvalue, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_group_long_pfdr.csv"), row.names = FALSE)
+
+### longitudinal atrophy
+df_long <- readRDS(here::here("data/df_long.Rds"))
+## SchaeferSubcortex 114 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"),
+          paste("right", c("accumbens_area",
+                           "amygdala",
+                           "caudate",
+                           "hippocampus",
+                           "pallidum",
+                           "putamen",
+                           "thalamus"),
+                sep = "_"))
+ctx <- colnames(df_long)[grep("^schaefer100.*.ct$", colnames(df_long))]
+ctx_wscore <- colnames(df_long)[grep("^schaefer100.*.ct_wscore$", colnames(df_long))]
+list <- append(ctx, sctx)
+list_wscore <- append(ctx_wscore, paste0(sctx, "_wscore"))
+# growth models
+df_long <- df_long %>%
+  dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+atrophy_mapping_individuals_slope <- data.frame(matrix(nrow = length(unique(df_long$id[df_long$group=="MS" & df_long$n_scans!=1])), ncol = length(list)+1))
+colnames(atrophy_mapping_individuals_slope) = c("id", paste0(list, "_slope")) # individual slopes of atrophy over time
+atrophy_mapping_individuals_slope$id <- unique(df_long$id[df_long$group=="MS" & df_long$n_scans!=1])
+atrophy_mapping_group_tvalue <- atrophy_mapping_group_pvalue <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group_tvalue) <- paste0(list, "_tvalue") # test statistic of the effect of time on volumes/CT
+colnames(atrophy_mapping_group_pvalue) <- paste0(list, "_pvalue") # p value of the effect of time on volumes/CT
+atrophy_mapping_individuals_slope_wscore <- atrophy_mapping_individuals_slope
+colnames(atrophy_mapping_individuals_slope_wscore) = c("id", paste0(list_wscore, "_slope")) # individual slopes of atrophy over time
+atrophy_mapping_group_tvalue_wscore <- atrophy_mapping_group_tvalue
+atrophy_mapping_group_pvalue_wscore <- atrophy_mapping_group_pvalue
+colnames(atrophy_mapping_group_tvalue_wscore) <- paste0(list_wscore, "_tvalue")
+colnames(atrophy_mapping_group_pvalue_wscore) <- paste0(list_wscore, "_pvalue")
+for (i in list){
+  MDL_group <- lme(as.formula(paste0(i, " ~ fu_time")),
+                   data = df_long[df_long$group=="MS" & df_long$n_scans!=1,],
+                   random = ~1|id, method="ML", 
+                   na.action = na.exclude,
+                   correlation = corCAR1(form = ~fu_time|id),
+                   control = list(msMaxIter = 1000, msMaxEval = 1000, opt = "optim", returnObject = TRUE))
+  atrophy_mapping_group_tvalue[,paste0(i, "_tvalue")] <- coef(summary(MDL_group))["fu_time", "t-value"]
+  atrophy_mapping_group_pvalue[,paste0(i, "_pvalue")] <- coef(summary(MDL_group))["fu_time", "p-value"]
+  for (l in atrophy_mapping_individuals_slope$id){
+    MDL_individual <- lm(get(i) ~ fu_time, data = df_long[df_long$id==l,])
+    atrophy_mapping_individuals_slope[atrophy_mapping_individuals_slope$id==l, paste0(i, "_slope")] <- (MDL_individual$coefficients[[2]] / df_long[df_long$id==l & (df_long$session=="ses-Y05" | df_long$session=="ses-01"),i])*100
+  }
+}
+for (i in list_wscore){
+  MDL_group <- lme(as.formula(paste0(i, " ~ fu_time")),
+                   data = df_long[df_long$group=="MS" & df_long$n_scans!=1,],
+                   random = ~1|id, method="ML", 
+                   na.action = na.exclude,
+                   correlation = corCAR1(form = ~fu_time|id),
+                   control = list(msMaxIter = 1000, msMaxEval = 1000, opt = "optim", returnObject = TRUE))
+  atrophy_mapping_group_tvalue_wscore[,paste0(i, "_tvalue")] <- coef(summary(MDL_group))["fu_time", "t-value"]
+  atrophy_mapping_group_pvalue_wscore[,paste0(i, "_pvalue")] <- coef(summary(MDL_group))["fu_time", "p-value"]
+  for (l in atrophy_mapping_individuals_slope_wscore$id){
+    MDL_individual <- lm(get(i) ~ fu_time, data = df_long[df_long$id==l,])
+    atrophy_mapping_individuals_slope_wscore[atrophy_mapping_individuals_slope_wscore$id==l, paste0(i, "_slope")] <- MDL_individual$coefficients[[2]]
+  }
+}
+column_index <- 2:(length(list)+1)
+atrophy_mapping_individuals_slope[column_index] <- -1*atrophy_mapping_individuals_slope[column_index] # flip so that more positive values correspond to greater atrophy
+atrophy_mapping_group_tvalue[1,] <- -1*atrophy_mapping_group_tvalue[1,] # flip so that more positive values correspond to greater atrophy
+atrophy_mapping_group_pvalue[1,] <- p.adjust(atrophy_mapping_group_pvalue[1,], method = "fdr")
+atrophy_mapping_group_pvalue_wscore[1,] <- p.adjust(atrophy_mapping_group_pvalue_wscore[1,], method = "fdr")
+# write out
+write.csv(atrophy_mapping_individuals_slope, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex114Parcels_individual_slopes.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_individuals_slope_wscore, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex114Parcels_individual_slopes_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_tvalue, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex114Parcels_group_t-values.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_tvalue_wscore, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex114Parcels_group_t-values_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_pvalue, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex114Parcels_group_pfdr.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_pvalue_wscore, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex114Parcels_group_pfdr_wscore.csv"), row.names = FALSE)
+
+## SchaeferSubcortex 414 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"),
+          paste("right", c("accumbens_area",
+                           "amygdala",
+                           "caudate",
+                           "hippocampus",
+                           "pallidum",
+                           "putamen",
+                           "thalamus"),
+                sep = "_"))
+ctx <- colnames(df_long)[grep("^schaefer400.*.ct$", colnames(df_long))]
+ctx_wscore <- colnames(df_long)[grep("^schaefer400.*.ct_wscore$", colnames(df_long))]
+list <- append(ctx, sctx)
+list_wscore <- append(ctx_wscore, paste0(sctx, "_wscore"))
+# growth models
+df_long <- df_long %>%
+  dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+atrophy_mapping_individuals_slope <- data.frame(matrix(nrow = length(unique(df_long$id[df_long$group=="MS" & df_long$n_scans!=1])), ncol = length(list)+1))
+colnames(atrophy_mapping_individuals_slope) = c("id", paste0(list, "_slope")) # individual slopes of atrophy over time
+atrophy_mapping_individuals_slope$id <- unique(df_long$id[df_long$group=="MS" & df_long$n_scans!=1])
+atrophy_mapping_group_tvalue <- atrophy_mapping_group_pvalue <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group_tvalue) <- paste0(list, "_tvalue") # test statistic of the effect of time on volumes/CT
+colnames(atrophy_mapping_group_pvalue) <- paste0(list, "_pvalue") # p value of the effect of time on volumes/CT
+atrophy_mapping_individuals_slope_wscore <- atrophy_mapping_individuals_slope
+colnames(atrophy_mapping_individuals_slope_wscore) = c("id", paste0(list_wscore, "_slope")) # individual slopes of atrophy over time
+atrophy_mapping_group_tvalue_wscore <- atrophy_mapping_group_tvalue
+atrophy_mapping_group_pvalue_wscore <- atrophy_mapping_group_pvalue
+colnames(atrophy_mapping_group_tvalue_wscore) <- paste0(list_wscore, "_tvalue")
+colnames(atrophy_mapping_group_pvalue_wscore) <- paste0(list_wscore, "_pvalue")
+for (i in list){
+  MDL_group <- lme(as.formula(paste0(i, " ~ fu_time")),
+                   data = df_long[df_long$group=="MS" & df_long$n_scans!=1,],
+                   random = ~1|id, method="ML", 
+                   na.action = na.exclude,
+                   correlation = corCAR1(form = ~fu_time|id),
+                   control = list(msMaxIter = 1000, msMaxEval = 1000, opt = "optim", returnObject = TRUE))
+  atrophy_mapping_group_tvalue[,paste0(i, "_tvalue")] <- coef(summary(MDL_group))["fu_time", "t-value"]
+  atrophy_mapping_group_pvalue[,paste0(i, "_pvalue")] <- coef(summary(MDL_group))["fu_time", "p-value"]
+  for (l in atrophy_mapping_individuals_slope$id){
+    MDL_individual <- lm(get(i) ~ fu_time, data = df_long[df_long$id==l,])
+    atrophy_mapping_individuals_slope[atrophy_mapping_individuals_slope$id==l, paste0(i, "_slope")] <- (MDL_individual$coefficients[[2]] / df_long[df_long$id==l & (df_long$session=="ses-Y05" | df_long$session=="ses-01"),i])*100
+  }
+}
+for (i in list_wscore){
+  MDL_group <- lme(as.formula(paste0(i, " ~ fu_time")),
+                   data = df_long[df_long$group=="MS" & df_long$n_scans!=1,],
+                   random = ~1|id, method="ML", 
+                   na.action = na.exclude,
+                   correlation = corCAR1(form = ~fu_time|id),
+                   control = list(msMaxIter = 1000, msMaxEval = 1000, opt = "optim", returnObject = TRUE))
+  atrophy_mapping_group_tvalue_wscore[,paste0(i, "_tvalue")] <- coef(summary(MDL_group))["fu_time", "t-value"]
+  atrophy_mapping_group_pvalue_wscore[,paste0(i, "_pvalue")] <- coef(summary(MDL_group))["fu_time", "p-value"]
+  for (l in atrophy_mapping_individuals_slope_wscore$id){
+    MDL_individual <- lm(get(i) ~ fu_time, data = df_long[df_long$id==l,])
+    atrophy_mapping_individuals_slope_wscore[atrophy_mapping_individuals_slope_wscore$id==l, paste0(i, "_slope")] <- MDL_individual$coefficients[[2]]
+  }
+}
+column_index <- 2:(length(list)+1)
+atrophy_mapping_individuals_slope[column_index] <- -1*atrophy_mapping_individuals_slope[column_index] # flip so that more positive values correspond to greater atrophy
+atrophy_mapping_group_tvalue[1,] <- -1*atrophy_mapping_group_tvalue[1,] # flip so that more positive values correspond to greater atrophy
+atrophy_mapping_group_pvalue[1,] <- p.adjust(atrophy_mapping_group_pvalue[1,], method = "fdr")
+atrophy_mapping_group_pvalue_wscore[1,] <- p.adjust(atrophy_mapping_group_pvalue_wscore[1,], method = "fdr")
+# write out
+write.csv(atrophy_mapping_individuals_slope, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex414Parcels_individual_slopes.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_individuals_slope_wscore, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex414Parcels_individual_slopes_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_tvalue, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex414Parcels_group_t-values.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_tvalue_wscore, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex414Parcels_group_t-values_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_pvalue, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex414Parcels_group_pfdr.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_pvalue_wscore, here::here("data/atrophy_long/atrophy_long_SchaeferSubcortex414Parcels_group_pfdr_wscore.csv"), row.names = FALSE)
+```
+
+```{r disconnection maps}
+df_baseline <- readRDS(here::here("data/df_baseline.Rds"))
+df_baseline <- df_baseline[df_baseline$group == "MS",]
+df_long <- readRDS(here::here("data/df_long.Rds"))
+df_long <- df_long %>%
+  dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+df_long <- df_long[(df_long$n_scans>1 & df_long$group == "MS"),]
+list_baseline <- df_baseline$full_id
+list_baseline_long <- df_baseline$full_id[df_baseline$full_id %in% df_long$full_id]
+
+## SchaeferSubcortex 114 parcels
+disc_dir <- "/data/anw/knw-work/g.pontillo/predictive_modelling/atrophy_long/derivatives/lst/disconnectome_SchaeferSubcortex114Parcels/"
+atlas <- read.csv("/data/anw/knw-work/g.pontillo/predictive_modelling/code/MRI_processing/atlases/CortexSubcortex/atlas-SchaeferSubcortex114Parcels_dseg.tsv", header = TRUE, sep = "\t") # atlas
+labels <- as.character(atlas[,"label"]) # atlas labels
+labels_ctx <- labels[1:100]
+labels_sctx <- labels[101:114]
+roi <- length(labels)
+df_disc <- data.frame(matrix(nrow = length(list_baseline), ncol = ((roi*(roi-1))/2)+1))
+df_disc_ctx <- data.frame(matrix(nrow = length(list_baseline), ncol = ((100*(100-1))/2)+1))
+df_disc_sctx <- data.frame(matrix(nrow = length(list_baseline), ncol = (14*100)+1))
+df_parcel_disc_ctx <- data.frame(matrix(nrow = length(list_baseline), ncol = 101))
+df_parcel_disc_sctx <- data.frame(matrix(nrow = length(list_baseline), ncol = 15))
+colnames(df_disc)[1] <- colnames(df_disc_ctx)[1] <- colnames(df_disc_sctx)[1] <- colnames(df_parcel_disc_ctx)[1] <- colnames(df_parcel_disc_sctx)[1] <- "ID"
+colnames(df_parcel_disc_ctx)[2:ncol(df_parcel_disc_ctx)] <- labels_ctx
+colnames(df_parcel_disc_sctx)[2:ncol(df_parcel_disc_sctx)] <- labels_sctx
+for (i in 1:length(list_baseline)) {
+  # disc
+  disc <- readMat(paste0(disc_dir, list_baseline[i],  "/Parcel_Disconnection/", list_baseline[i], "_SchaeferSubcortex114Parcels_percent_parcel_SDC.mat"))[[1]]
+  disc_ctx <- disc[1:100, 1:100]
+  disc_sctx <- disc[101:114, 1:100]
+  disc_flat <- disc[upper.tri(disc, diag = FALSE)] # this equals to using numpy.tril as R is column-major
+  disc_flat_ctx <- disc_ctx[upper.tri(disc_ctx, diag = FALSE)] # this equals to using numpy.tril as R is column-major
+  disc_flat_sctx <- as.vector(t(disc_sctx))
+  df_disc[i,1] <- df_disc_ctx[i,1] <- df_disc_sctx[i,1] <- list_baseline[i]
+  df_disc[i,2:ncol(df_disc)] <- disc_flat
+  df_disc_ctx[i,2:ncol(df_disc_ctx)] <- disc_flat_ctx
+  df_disc_sctx[i,2:ncol(df_disc_sctx)] <- disc_flat_sctx
+  # parcel
+  parcel_disc <- read.csv(paste0(disc_dir, list_baseline[i],  "/Parcel_Disconnection/", list_baseline[i], "_SchaeferSubcortex114Parcels_percent_parcel_SDC.node"), header = FALSE, sep = "\t")
+  parcel_disc_ctx <- parcel_disc[1:100, 5]
+  parcel_disc_sctx <- parcel_disc[101:114, 5]
+  df_parcel_disc_ctx[i,1] <- df_parcel_disc_sctx[i,1] <- list_baseline[i]
+  df_parcel_disc_ctx[i,2:ncol(df_parcel_disc_ctx)] <- parcel_disc_ctx
+  df_parcel_disc_sctx[i,2:ncol(df_parcel_disc_sctx)] <- parcel_disc_sctx
+}
+index <- which(upper.tri(disc, diag = FALSE), arr.ind=TRUE)
+for (i in 1:dim(index)[1]){
+  colnames(df_disc)[1+i] <- paste0(labels_ctx[index[i,1]],
+                                   "_to_",
+                                   labels_ctx[index[i,2]])
+  }
+index_ctx <- which(upper.tri(disc_ctx, diag = FALSE), arr.ind=TRUE)
+for (i in 1:dim(index_ctx)[1]){
+  colnames(df_disc_ctx)[1+i] <- paste0(labels_ctx[index_ctx[i,1]],
+                                       "_to_",
+                                       labels_ctx[index_ctx[i,2]])
+  }
+index_sctx <- which((t(disc_sctx) == t(disc_sctx)), arr.ind=TRUE)
+for (i in 1:dim(index_sctx)[1]){
+  colnames(df_disc_sctx)[1+i] <- paste0(labels_sctx[index_sctx[i,1]],
+                                        "_to_",
+                                        labels_ctx[index_sctx[i,2]])
+  }
+# average disconnectome
+average_disc_MS <- colMeans(df_disc[,-1], na.rm = TRUE)
+mat_MS <- matrix(nrow = roi, ncol = roi)
+mat_MS[upper.tri(mat_MS)] <- as.matrix(average_disc_MS)
+mat_MS <- as.matrix(Matrix::forceSymmetric(mat_MS, uplo = "U"))
+diag(mat_MS) <- 0
+mat_MS_ctx <- mat_MS[1:100, 1:100]
+mat_MS_sctx <- mat_MS[101:114, 1:100]
+average_parcel_disc_ctx <- colMeans(df_parcel_disc_ctx[,-1], na.rm = TRUE)
+average_parcel_disc_sctx <- colMeans(df_parcel_disc_sctx[,-1], na.rm = TRUE)
+# average disconnectome long
+df_disc_long <- df_disc[df_disc$ID %in% list_baseline_long,]
+average_disc_MS_long <- colMeans(df_disc_long[,-1], na.rm = TRUE)
+mat_MS_long <- matrix(nrow = roi, ncol = roi)
+mat_MS_long[upper.tri(mat_MS_long)] <- as.matrix(average_disc_MS_long)
+mat_MS_long <- as.matrix(Matrix::forceSymmetric(mat_MS_long, uplo = "U"))
+diag(mat_MS_long) <- 0
+mat_MS_long_ctx <- mat_MS[1:100, 1:100]
+mat_MS_long_sctx <- mat_MS[101:114, 1:100]
+df_parcel_disc_ctx_long <- df_parcel_disc_ctx[df_parcel_disc_ctx$ID %in% list_baseline_long,]
+df_parcel_disc_sctx_long <- df_parcel_disc_sctx[df_parcel_disc_sctx$ID %in% list_baseline_long,]
+average_parcel_disc_ctx_long <- colMeans(df_parcel_disc_ctx_long[,-1], na.rm = TRUE)
+average_parcel_disc_sctx_long <- colMeans(df_parcel_disc_sctx_long[,-1], na.rm = TRUE)
+# write average and individuals disconnectomes
+write.table(mat_MS, here::here("data/disc/disc_SchaeferSubcortex114Parcels_group.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(labels, here::here("data/disc/disc_SchaeferSubcortex114Parcels_labels.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_ctx, here::here("data/disc/disc_SchaeferSubcortex114Parcels_group_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_sctx, here::here("data/disc/disc_SchaeferSubcortex114Parcels_group_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_long, here::here("data/disc/disc_SchaeferSubcortex114Parcels_group_long.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_long_ctx, here::here("data/disc/disc_SchaeferSubcortex114Parcels_group_long_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_long_sctx, here::here("data/disc/disc_SchaeferSubcortex114Parcels_group_long_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.csv(df_disc_ctx, here::here("data/disc/disc_SchaeferSubcortex114Parcels_individuals_ctx.csv"), row.names = FALSE)
+write.csv(df_disc_sctx, here::here("data/disc/disc_SchaeferSubcortex114Parcels_individuals_sctx.csv"), row.names = FALSE)
+write.table(average_parcel_disc_ctx, here::here("data/disc/parcel_disc_SchaeferSubcortex114Parcels_group_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(average_parcel_disc_sctx, here::here("data/disc/parcel_disc_SchaeferSubcortex114Parcels_group_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(average_parcel_disc_ctx_long, here::here("data/disc/parcel_disc_SchaeferSubcortex114Parcels_group_long_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(average_parcel_disc_sctx_long, here::here("data/disc/parcel_disc_SchaeferSubcortex114Parcels_group_long_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.csv(df_parcel_disc_ctx, here::here("data/disc/parcel_disc_SchaeferSubcortex114Parcels_individuals_ctx.csv"), row.names = FALSE)
+write.csv(df_parcel_disc_sctx, here::here("data/disc/parcel_disc_SchaeferSubcortex114Parcels_individuals_sctx.csv"), row.names = FALSE)
+
+## SchaeferSubcortex 414 parcels
+disc_dir <- "/data/anw/knw-work/g.pontillo/predictive_modelling/atrophy_long/derivatives/lst/disconnectome_SchaeferSubcortex414Parcels/"
+atlas <- read.csv("/data/anw/knw-work/g.pontillo/predictive_modelling/code/MRI_processing/atlases/CortexSubcortex/atlas-SchaeferSubcortex414Parcels_dseg.tsv", header = TRUE, sep = "\t") # atlas
+labels <- as.character(atlas[,"label"]) # atlas labels
+labels_ctx <- labels[1:400]
+labels_sctx <- labels[401:414]
+roi <- length(labels)
+df_disc <- data.frame(matrix(nrow = length(list_baseline), ncol = ((roi*(roi-1))/2)+1))
+df_disc_ctx <- data.frame(matrix(nrow = length(list_baseline), ncol = ((400*(400-1))/2)+1))
+df_disc_sctx <- data.frame(matrix(nrow = length(list_baseline), ncol = (14*400)+1))
+df_parcel_disc_ctx <- data.frame(matrix(nrow = length(list_baseline), ncol = 401))
+df_parcel_disc_sctx <- data.frame(matrix(nrow = length(list_baseline), ncol = 15))
+colnames(df_disc)[1] <- colnames(df_disc_ctx)[1] <- colnames(df_disc_sctx)[1] <- colnames(df_parcel_disc_ctx)[1] <- colnames(df_parcel_disc_sctx)[1] <- "ID"
+colnames(df_parcel_disc_ctx)[2:ncol(df_parcel_disc_ctx)] <- labels_ctx
+colnames(df_parcel_disc_sctx)[2:ncol(df_parcel_disc_sctx)] <- labels_sctx
+for (i in 1:length(list_baseline)) {
+  # disc
+  disc <- readMat(paste0(disc_dir, list_baseline[i],  "/Parcel_Disconnection/", list_baseline[i], "_SchaeferSubcortex414Parcels_percent_parcel_SDC.mat"))[[1]]
+  disc_ctx <- disc[1:400, 1:400]
+  disc_sctx <- disc[401:414, 1:400]
+  disc_flat <- disc[upper.tri(disc, diag = FALSE)] # this equals to using numpy.tril as R is column-major
+  disc_flat_ctx <- disc_ctx[upper.tri(disc_ctx, diag = FALSE)] # this equals to using numpy.tril as R is column-major
+  disc_flat_sctx <- as.vector(t(disc_sctx))
+  df_disc[i,1] <- df_disc_ctx[i,1] <- df_disc_sctx[i,1] <- list_baseline[i]
+  df_disc[i,2:ncol(df_disc)] <- disc_flat
+  df_disc_ctx[i,2:ncol(df_disc_ctx)] <- disc_flat_ctx
+  df_disc_sctx[i,2:ncol(df_disc_sctx)] <- disc_flat_sctx
+  # parcel
+  parcel_disc <- read.csv(paste0(disc_dir, list_baseline[i],  "/Parcel_Disconnection/", list_baseline[i], "_SchaeferSubcortex414Parcels_percent_parcel_SDC.node"), header = FALSE, sep = "\t")
+  parcel_disc_ctx <- parcel_disc[1:400, 5]
+  parcel_disc_sctx <- parcel_disc[401:414, 5]
+  df_parcel_disc_ctx[i,1] <- df_parcel_disc_sctx[i,1] <- list_baseline[i]
+  df_parcel_disc_ctx[i,2:ncol(df_parcel_disc_ctx)] <- parcel_disc_ctx
+  df_parcel_disc_sctx[i,2:ncol(df_parcel_disc_sctx)] <- parcel_disc_sctx
+}
+index <- which(upper.tri(disc, diag = FALSE), arr.ind=TRUE)
+for (i in 1:dim(index)[1]){
+  colnames(df_disc)[1+i] <- paste0(labels_ctx[index[i,1]],
+                                   "_to_",
+                                   labels_ctx[index[i,2]])
+  }
+index_ctx <- which(upper.tri(disc_ctx, diag = FALSE), arr.ind=TRUE)
+for (i in 1:dim(index_ctx)[1]){
+  colnames(df_disc_ctx)[1+i] <- paste0(labels_ctx[index_ctx[i,1]],
+                                       "_to_",
+                                       labels_ctx[index_ctx[i,2]])
+  }
+index_sctx <- which((t(disc_sctx) == t(disc_sctx)), arr.ind=TRUE)
+for (i in 1:dim(index_sctx)[1]){
+  colnames(df_disc_sctx)[1+i] <- paste0(labels_sctx[index_sctx[i,1]],
+                                        "_to_",
+                                        labels_ctx[index_sctx[i,2]])
+  }
+# average disconnectome
+average_disc_MS <- colMeans(df_disc[,-1], na.rm = TRUE)
+mat_MS <- matrix(nrow = roi, ncol = roi)
+mat_MS[upper.tri(mat_MS)] <- as.matrix(average_disc_MS)
+mat_MS <- as.matrix(Matrix::forceSymmetric(mat_MS, uplo = "U"))
+diag(mat_MS) <- 0
+mat_MS_ctx <- mat_MS[1:400, 1:400]
+mat_MS_sctx <- mat_MS[401:414, 1:400]
+average_parcel_disc_ctx <- colMeans(df_parcel_disc_ctx[,-1], na.rm = TRUE)
+average_parcel_disc_sctx <- colMeans(df_parcel_disc_sctx[,-1], na.rm = TRUE)
+# average disconnectome long
+df_disc_long <- df_disc[df_disc$ID %in% list_baseline_long,]
+average_disc_MS_long <- colMeans(df_disc_long[,-1], na.rm = TRUE)
+mat_MS_long <- matrix(nrow = roi, ncol = roi)
+mat_MS_long[upper.tri(mat_MS_long)] <- as.matrix(average_disc_MS_long)
+mat_MS_long <- as.matrix(Matrix::forceSymmetric(mat_MS_long, uplo = "U"))
+diag(mat_MS_long) <- 0
+mat_MS_long_ctx <- mat_MS[1:400, 1:400]
+mat_MS_long_sctx <- mat_MS[401:414, 1:400]
+df_parcel_disc_ctx_long <- df_parcel_disc_ctx[df_parcel_disc_ctx$ID %in% list_baseline_long,]
+df_parcel_disc_sctx_long <- df_parcel_disc_sctx[df_parcel_disc_sctx$ID %in% list_baseline_long,]
+average_parcel_disc_ctx_long <- colMeans(df_parcel_disc_ctx_long[,-1], na.rm = TRUE)
+average_parcel_disc_sctx_long <- colMeans(df_parcel_disc_sctx_long[,-1], na.rm = TRUE)
+# write average and individuals disconnectomes
+write.table(mat_MS, here::here("data/disc/disc_SchaeferSubcortex414Parcels_group.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(labels, here::here("data/disc/disc_SchaeferSubcortex414Parcels_labels.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_ctx, here::here("data/disc/disc_SchaeferSubcortex414Parcels_group_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_sctx, here::here("data/disc/disc_SchaeferSubcortex414Parcels_group_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_long, here::here("data/disc/disc_SchaeferSubcortex414Parcels_group_long.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_long_ctx, here::here("data/disc/disc_SchaeferSubcortex414Parcels_group_long_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_long_sctx, here::here("data/disc/disc_SchaeferSubcortex414Parcels_group_long_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.csv(df_disc_ctx, here::here("data/disc/disc_SchaeferSubcortex414Parcels_individuals_ctx.csv"), row.names = FALSE)
+write.csv(df_disc_sctx, here::here("data/disc/disc_SchaeferSubcortex414Parcels_individuals_sctx.csv"), row.names = FALSE)
+write.table(average_parcel_disc_ctx, here::here("data/disc/parcel_disc_SchaeferSubcortex414Parcels_group_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(average_parcel_disc_sctx, here::here("data/disc/parcel_disc_SchaeferSubcortex414Parcels_group_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(average_parcel_disc_ctx_long, here::here("data/disc/parcel_disc_SchaeferSubcortex414Parcels_group_long_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(average_parcel_disc_sctx_long, here::here("data/disc/parcel_disc_SchaeferSubcortex414Parcels_group_long_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.csv(df_parcel_disc_ctx, here::here("data/disc/parcel_disc_SchaeferSubcortex414Parcels_individuals_ctx.csv"), row.names = FALSE)
+write.csv(df_parcel_disc_sctx, here::here("data/disc/parcel_disc_SchaeferSubcortex414Parcels_individuals_sctx.csv"), row.names = FALSE)
+```
+
+```{r correlated gene expression matrix, purl = FALSE}
+## SchaeferSubcortex 114 parcels
+# load gene expression vectors
+GE_vectors <- read.csv(here::here("data/ge/allgenes_stable_r0.2_schaefer_100.csv"), header = TRUE, sep = ",")
+tGE_vectors <- t(GE_vectors[,-1])
+colnames(tGE_vectors) <- GE_vectors$label
+CGE <- cor(t(GE_vectors[,-1]))
+# corrplot(CGE, method="color")
+mat_CGE <- as.matrix(Matrix::forceSymmetric(CGE, uplo = "U"))
+diag(mat_CGE) <- 0
+mat_CGE_ctx <- mat_CGE[1:100, 1:100]
+mat_CGE_sctx <- mat_CGE[101:114,1:100]
+# write average matrices
+write.table(mat_CGE, here::here("data/ge/CGE_SchaeferSubcortex114Parcels.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_CGE_ctx, here::here("data/ge/CGE_SchaeferSubcortex114Parcels_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_CGE_sctx, here::here("data/ge/CGE_SchaeferSubcortex114Parcels_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(GE_vectors$label, here::here("data/ge/SchaeferSubcortex114Parcels_labels.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+
+## SchaeferSubcortex 414 parcels
+# load gene expression vectors
+GE_vectors <- read.csv(here::here("data/ge/allgenes_stable_r0.2_schaefer_400.csv"), header = TRUE, sep = ",")
+tGE_vectors <- t(GE_vectors[,-1])
+colnames(tGE_vectors) <- GE_vectors$label
+CGE <- cor(t(GE_vectors[,-1]))
+# corrplot(CGE, method="color")
+mat_CGE <- as.matrix(Matrix::forceSymmetric(CGE, uplo = "U"))
+diag(mat_CGE) <- 0
+mat_CGE_ctx <- mat_CGE[1:400, 1:400]
+mat_CGE_sctx <- mat_CGE[401:414,1:400]
+# write average matrices
+write.table(mat_CGE, here::here("data/ge/CGE_SchaeferSubcortex414Parcels.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_CGE_ctx, here::here("data/ge/CGE_SchaeferSubcortex414Parcels_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_CGE_sctx, here::here("data/ge/CGE_SchaeferSubcortex414Parcels_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(GE_vectors$label, here::here("data/ge/SchaeferSubcortex414Parcels_labels.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+```
+
+```{r compute baseline neighbour atrophy weighted by SC/FC/CGE}
+### SchaeferSubcortex 114 parcels
+## load normative functional/structural/CGE matrices
+sc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_ctx_schaefer_100.csv"), header = FALSE, sep = ","))
+sc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_sctx_schaefer_100.csv"), header = FALSE, sep = ","))
+sc_sctx <- sc_sctx[,1:100] # the sctx matrix contains also subcortico-subcortical connections
+fc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_ctx_schaefer_100.csv"), header = FALSE, sep = ","))
+fc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_sctx_schaefer_100.csv"), header = FALSE, sep = ","))
+cge_ctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex114Parcels_ctx.csv"), header = FALSE, sep = ","))
+cge_sctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex114Parcels_sctx.csv"), header = FALSE, sep = ","))
+## group-level
+# load atrophy map
+atrophy_mapping <- read.csv(here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_group_cohend.csv"), header = TRUE, sep = ",")
+atrophy_ctx <- atrophy_mapping[,1:100]
+atrophy_sctx <- atrophy_mapping[,101:114]
+# compute neighbourhood atrophy sc ctx
+neighbourhood_atrophy_sc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_sc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  weight_vec <- sc_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_sc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy sc sctx
+neighbourhood_atrophy_sc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_sc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  weight_vec <- sc_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_sc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy fc ctx
+neighbourhood_atrophy_fc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(fc_ctx[i,]!=0)
+  weight_vec <- fc_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy fc sctx
+neighbourhood_atrophy_fc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(fc_sctx[i,]!=0)
+  weight_vec <- fc_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy cge ctx
+neighbourhood_atrophy_cge_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_cge_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(cge_ctx[i,]!=0 & !is.na(cge_ctx[i,]))
+  weight_vec <- cge_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_cge_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy cge sctx
+neighbourhood_atrophy_cge_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_cge_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(cge_sctx[i,]!=0 & !is.na(cge_sctx[i,]))
+  weight_vec <- cge_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_cge_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# write out
+write.csv(neighbourhood_atrophy_sc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_sc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_sc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_sc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_fc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_fc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_cge_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_cge_sctx.csv"), row.names = FALSE)
+## group-level long
+# load atrophy map
+atrophy_mapping <- read.csv(here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_group_long_cohend.csv"), header = TRUE, sep = ",")
+atrophy_ctx <- atrophy_mapping[,1:100]
+atrophy_sctx <- atrophy_mapping[,101:114]
+# compute neighbourhood atrophy sc ctx
+neighbourhood_atrophy_sc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_sc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  weight_vec <- sc_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_sc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy sc sctx
+neighbourhood_atrophy_sc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_sc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  weight_vec <- sc_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_sc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy fc ctx
+neighbourhood_atrophy_fc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(fc_ctx[i,]!=0)
+  weight_vec <- fc_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy fc sctx
+neighbourhood_atrophy_fc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(fc_sctx[i,]!=0)
+  weight_vec <- fc_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy cge ctx
+neighbourhood_atrophy_cge_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_cge_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(cge_ctx[i,]!=0 & !is.na(cge_ctx[i,]))
+  weight_vec <- cge_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_cge_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy cge sctx
+neighbourhood_atrophy_cge_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_cge_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(cge_sctx[i,]!=0 & !is.na(cge_sctx[i,]))
+  weight_vec <- cge_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_cge_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# write out
+write.csv(neighbourhood_atrophy_sc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_long_sc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_sc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_long_sc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_long_fc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_long_fc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_long_cge_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_group_long_cge_sctx.csv"), row.names = FALSE)
+## individual-level
+# load atrophy map
+atrophy_mapping <- read.csv(here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_individuals_wscore.csv"), header = TRUE, sep = ",")
+atrophy_ctx <- atrophy_mapping[,2:101]
+atrophy_sctx <- atrophy_mapping[,102:115]
+# compute neighbourhood atrophy sc ctx
+neighbourhood_atrophy_sc_ctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_ctx))))
+colnames(neighbourhood_atrophy_sc_ctx) <- append("id", paste0(colnames(atrophy_ctx), "_neighbours"))
+neighbourhood_atrophy_sc_ctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_ctx)){
+    neighbours <- which(sc_ctx[i,]!=0)
+    weight_vec <- sc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_ctx[neighbourhood_atrophy_sc_ctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# compute neighbourhood atrophy sc sctx
+neighbourhood_atrophy_sc_sctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_sctx))))
+colnames(neighbourhood_atrophy_sc_sctx) <- append("id", paste0(colnames(atrophy_sctx), "_neighbours"))
+neighbourhood_atrophy_sc_sctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_sctx)){
+    neighbours <- which(sc_sctx[i,]!=0)
+    weight_vec <- sc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_sctx[neighbourhood_atrophy_sc_sctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# compute neighbourhood atrophy fc ctx
+neighbourhood_atrophy_fc_ctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_ctx))))
+colnames(neighbourhood_atrophy_fc_ctx) <- append("id", paste0(colnames(atrophy_ctx), "_neighbours"))
+neighbourhood_atrophy_fc_ctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_ctx)){
+    neighbours <- which(fc_ctx[i,]!=0)
+    weight_vec <- fc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_ctx[neighbourhood_atrophy_fc_ctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# compute neighbourhood atrophy fc sctx
+neighbourhood_atrophy_fc_sctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_sctx))))
+colnames(neighbourhood_atrophy_fc_sctx) <- append("id", paste0(colnames(atrophy_sctx), "_neighbours"))
+neighbourhood_atrophy_fc_sctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_sctx)){
+    neighbours <- which(fc_sctx[i,]!=0)
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[neighbourhood_atrophy_fc_sctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# compute neighbourhood atrophy cge ctx
+neighbourhood_atrophy_cge_ctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_ctx))))
+colnames(neighbourhood_atrophy_cge_ctx) <- append("id", paste0(colnames(atrophy_ctx), "_neighbours"))
+neighbourhood_atrophy_cge_ctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_ctx)){
+    neighbours <- which(cge_ctx[i,]!=0 & !is.na(cge_ctx[i,]))
+    weight_vec <- cge_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_cge_ctx[neighbourhood_atrophy_cge_ctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# compute neighbourhood atrophy cge sctx
+neighbourhood_atrophy_cge_sctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_sctx))))
+colnames(neighbourhood_atrophy_cge_sctx) <- append("id", paste0(colnames(atrophy_sctx), "_neighbours"))
+neighbourhood_atrophy_cge_sctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_sctx)){
+    neighbours <- which(cge_sctx[i,]!=0 & !is.na(cge_sctx[i,]))
+    weight_vec <- cge_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_cge_sctx[neighbourhood_atrophy_cge_sctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# write out
+write.csv(neighbourhood_atrophy_sc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_individuals_sc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_sc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_individuals_sc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_individuals_fc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_individuals_fc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_individuals_cge_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_individuals_cge_sctx.csv"), row.names = FALSE)
+
+### SchaeferSubcortex 414 parcels
+## load normative functional/structural/CGE matrices
+sc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_ctx_schaefer_400.csv"), header = FALSE, sep = ","))
+sc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_sctx_schaefer_400.csv"), header = FALSE, sep = ","))
+sc_sctx <- sc_sctx[,1:400] # the sctx matrix contains also subcortico-subcortical connections
+fc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_ctx_schaefer_400.csv"), header = FALSE, sep = ","))
+fc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_sctx_schaefer_400.csv"), header = FALSE, sep = ","))
+cge_ctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex414Parcels_ctx.csv"), header = FALSE, sep = ","))
+cge_sctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex414Parcels_sctx.csv"), header = FALSE, sep = ","))
+## group-level
+# load atrophy map
+atrophy_mapping <- read.csv(here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_group_cohend.csv"), header = TRUE, sep = ",")
+atrophy_ctx <- atrophy_mapping[,1:400]
+atrophy_sctx <- atrophy_mapping[,401:414]
+# compute neighbourhood atrophy sc ctx
+neighbourhood_atrophy_sc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_sc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  weight_vec <- sc_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_sc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy sc sctx
+neighbourhood_atrophy_sc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_sc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  weight_vec <- sc_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_sc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy fc ctx
+neighbourhood_atrophy_fc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(fc_ctx[i,]!=0)
+  weight_vec <- fc_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy fc sctx
+neighbourhood_atrophy_fc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(fc_sctx[i,]!=0)
+  weight_vec <- fc_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy cge ctx
+neighbourhood_atrophy_cge_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_cge_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(cge_ctx[i,]!=0 & !is.na(cge_ctx[i,]))
+  weight_vec <- cge_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_cge_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy cge sctx
+neighbourhood_atrophy_cge_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_cge_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(cge_sctx[i,]!=0 & !is.na(cge_sctx[i,]))
+  weight_vec <- cge_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_cge_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# write out
+write.csv(neighbourhood_atrophy_sc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_sc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_sc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_sc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_fc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_fc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_cge_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_cge_sctx.csv"), row.names = FALSE)
+## group-level long
+# load atrophy map
+atrophy_mapping <- read.csv(here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_group_long_cohend.csv"), header = TRUE, sep = ",")
+atrophy_ctx <- atrophy_mapping[,1:400]
+atrophy_sctx <- atrophy_mapping[,401:414]
+# compute neighbourhood atrophy sc ctx
+neighbourhood_atrophy_sc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_sc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  weight_vec <- sc_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_sc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy sc sctx
+neighbourhood_atrophy_sc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_sc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  weight_vec <- sc_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_sc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy fc ctx
+neighbourhood_atrophy_fc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(fc_ctx[i,]!=0)
+  weight_vec <- fc_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy fc sctx
+neighbourhood_atrophy_fc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(fc_sctx[i,]!=0)
+  weight_vec <- fc_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy cge ctx
+neighbourhood_atrophy_cge_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_cge_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(cge_ctx[i,]!=0 & !is.na(cge_ctx[i,]))
+  weight_vec <- cge_ctx[i,c(neighbours)]
+  neighbourhood_atrophy_cge_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# compute neighbourhood atrophy cge sctx
+neighbourhood_atrophy_cge_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_cge_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(cge_sctx[i,]!=0 & !is.na(cge_sctx[i,]))
+  weight_vec <- cge_sctx[i,c(neighbours)]
+  neighbourhood_atrophy_cge_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(neighbours))
+  }
+# write out
+write.csv(neighbourhood_atrophy_sc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_long_sc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_sc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_long_sc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_long_fc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_long_fc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_long_cge_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_group_long_cge_sctx.csv"), row.names = FALSE)
+## individual-level
+# load atrophy map
+atrophy_mapping <- read.csv(here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_individuals_wscore.csv"), header = TRUE, sep = ",")
+atrophy_ctx <- atrophy_mapping[,2:401]
+atrophy_sctx <- atrophy_mapping[,402:415]
+# compute neighbourhood atrophy sc ctx
+neighbourhood_atrophy_sc_ctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_ctx))))
+colnames(neighbourhood_atrophy_sc_ctx) <- append("id", paste0(colnames(atrophy_ctx), "_neighbours"))
+neighbourhood_atrophy_sc_ctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_ctx)){
+    neighbours <- which(sc_ctx[i,]!=0)
+    weight_vec <- sc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_ctx[neighbourhood_atrophy_sc_ctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# compute neighbourhood atrophy sc sctx
+neighbourhood_atrophy_sc_sctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_sctx))))
+colnames(neighbourhood_atrophy_sc_sctx) <- append("id", paste0(colnames(atrophy_sctx), "_neighbours"))
+neighbourhood_atrophy_sc_sctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_sctx)){
+    neighbours <- which(sc_sctx[i,]!=0)
+    weight_vec <- sc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_sctx[neighbourhood_atrophy_sc_sctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# compute neighbourhood atrophy fc ctx
+neighbourhood_atrophy_fc_ctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_ctx))))
+colnames(neighbourhood_atrophy_fc_ctx) <- append("id", paste0(colnames(atrophy_ctx), "_neighbours"))
+neighbourhood_atrophy_fc_ctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_ctx)){
+    neighbours <- which(fc_ctx[i,]!=0)
+    weight_vec <- fc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_ctx[neighbourhood_atrophy_fc_ctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# compute neighbourhood atrophy fc sctx
+neighbourhood_atrophy_fc_sctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_sctx))))
+colnames(neighbourhood_atrophy_fc_sctx) <- append("id", paste0(colnames(atrophy_sctx), "_neighbours"))
+neighbourhood_atrophy_fc_sctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_sctx)){
+    neighbours <- which(fc_sctx[i,]!=0)
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[neighbourhood_atrophy_fc_sctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# compute neighbourhood atrophy cge ctx
+neighbourhood_atrophy_cge_ctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_ctx))))
+colnames(neighbourhood_atrophy_cge_ctx) <- append("id", paste0(colnames(atrophy_ctx), "_neighbours"))
+neighbourhood_atrophy_cge_ctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_ctx)){
+    neighbours <- which(cge_ctx[i,]!=0 & !is.na(cge_ctx[i,]))
+    weight_vec <- cge_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_cge_ctx[neighbourhood_atrophy_cge_ctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# compute neighbourhood atrophy cge sctx
+neighbourhood_atrophy_cge_sctx <- data.frame(matrix(nrow = length(atrophy_mapping$id), ncol = (1+length(atrophy_sctx))))
+colnames(neighbourhood_atrophy_cge_sctx) <- append("id", paste0(colnames(atrophy_sctx), "_neighbours"))
+neighbourhood_atrophy_cge_sctx$id <- atrophy_mapping$id
+for (l in atrophy_mapping$id){
+  for (i in 1:length(atrophy_sctx)){
+    neighbours <- which(cge_sctx[i,]!=0 & !is.na(cge_sctx[i,]))
+    weight_vec <- cge_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_cge_sctx[neighbourhood_atrophy_cge_sctx$id==l,i+1] <- sum(atrophy_ctx[atrophy_mapping$id==l,neighbours]*weight_vec)*(1/length(neighbours))
+  }
+  }
+# write out
+write.csv(neighbourhood_atrophy_sc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_individuals_sc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_sc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_individuals_sc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_individuals_fc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_individuals_fc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_ctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_individuals_cge_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_sctx, here::here("data/neighbourhood_atrophy/neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_individuals_cge_sctx.csv"), row.names = FALSE)
+```
+
+```{r prepare data for clustering}
+df_baseline <- readRDS(here::here("data/df_baseline.Rds"))
+df_baseline_stage <- df_baseline %>% mutate(stage = case_when(clinical_phenotype == "SP" ~ "SP",
+                             clinical_phenotype == "PP"  ~ "PP",
+                             clinical_phenotype == "CIS" | (clinical_phenotype == "RR" & disease_duration < 5) ~ "ER",
+                             clinical_phenotype == "RR" & disease_duration >= 5 ~ "LR"))
+df_baseline_stage <- df_baseline_stage[df_baseline_stage$group=="MS",]
+df_baseline_stage$stage <- factor(df_baseline_stage$stage, levels = c("PP", "SP", "ER", "LR"))
+MDL <- lm(brain_seg_not_vent ~ age + sex + estimated_total_intra_cranial_vol + site, data = df_baseline[df_baseline$group=="HC",], na.action = na.exclude)
+df_baseline[, "brain_wscore"] <- (df_baseline[, "brain_seg_not_vent"] - predict(MDL, df_baseline)) / sd(MDL$residuals)
+df_baseline_globalatrophy <- df_baseline %>% mutate(globalatrophy = case_when(brain_wscore <= -1.5  ~ 1, brain_wscore > -1.5 ~ 0))
+df_baseline_globalatrophy <- df_baseline_globalatrophy[df_baseline_globalatrophy$group=="MS",]
+df_baseline_globalatrophy$globalatrophy <- factor(df_baseline_globalatrophy$globalatrophy, levels = c(0, 1))
+stages <- df_baseline_stage[, c("id", "session", "stage")]
+globalatrophy <- df_baseline_globalatrophy[, c("id", "session", "globalatrophy")]
+write.csv(stages, here::here("data/stages.csv"), row.names = FALSE)
+write.csv(globalatrophy, here::here("data/globalatrophy.csv"), row.names = FALSE)
+## SchaeferSubcortex 114 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"),
+          paste("right", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"))
+ctx <- colnames(df_baseline)[grep("^schaefer100.*.wscore$", colnames(df_baseline))]
+list <- append(ctx, paste0(sctx, "_wscore"))
+feature_tsv <- df_baseline[, c("id", "session", "group", list)]
+colnames(feature_tsv) <- c("participant_id", "session_id", "diagnosis", list)
+column_index <- 4:(length(list)+3)
+feature_tsv[column_index] <- -1*feature_tsv[column_index] # flip so that more positive values correspond to greater atrophy
+levels(feature_tsv$diagnosis) <- c("-1", "1")
+write.table(feature_tsv, here::here("data/feature_SchaeferSubcortex114Parcels.tsv"), sep = '\t', row.names = FALSE)
+## SchaeferSubcortex 414 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"),
+          paste("right", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"))
+ctx <- colnames(df_baseline)[grep("^schaefer400.*.wscore$", colnames(df_baseline))]
+list <- append(ctx, paste0(sctx, "_wscore"))
+feature_tsv <- df_baseline[, c("id", "session", "group", list)]
+colnames(feature_tsv) <- c("participant_id", "session_id", "diagnosis", list)
+column_index <- 4:(length(list)+3)
+feature_tsv[column_index] <- -1*feature_tsv[column_index] # flip so that more positive values correspond to greater atrophy
+levels(feature_tsv$diagnosis) <- c("-1", "1")
+write.table(feature_tsv, here::here("data/feature_SchaeferSubcortex414Parcels.tsv"), sep = '\t', row.names = FALSE)
+```
+
+```{r explore clusters}
+df_baseline <- readRDS(here::here("data/df_baseline.Rds"))
+## SchaeferSubcortex 114 parcels
+hydra_labels <- read.csv(here::here("output/hydra_SchaeferSubcortex114Parcels/clustering/clustering_assignment.tsv"), sep = "\t")
+hydra_labels$assignment_2 <- factor(hydra_labels$assignment_2, levels = c("-1", "1", "2"))
+hydra_ARI <- as.data.frame(t(read.csv(here::here("output/hydra_SchaeferSubcortex114Parcels/clustering/adjusted_rand_index.tsv"), sep = "\t", header = FALSE)))
+colnames(hydra_ARI) <- c("N_subtypes", "ARI")
+hydra_ARI$ARI <- as.numeric(hydra_ARI$ARI)
+ggplot(data=hydra_ARI, aes(x=N_subtypes, y=ARI, group=1)) +
+  geom_line()+
+  geom_point()+
+  ylim(0,0.8)
+# write optimal clustering
+hydra_labels_2subtypes <- hydra_labels[, c("participant_id", "session_id", "diagnosis", "assignment_2")]
+write.csv(hydra_labels_2subtypes, here::here("data/hydra_SchaeferSubcortex114Parcels_2subtypes.csv"), row.names = FALSE)
+# explore atrophy patterns
+df_baseline_hydra <- merge(df_baseline, hydra_labels, by.x = "id", by.y = "participant_id")
+sctx <- c(paste("left", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"),
+          paste("right", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"))
+ctx <- colnames(df_baseline)[grep("^schaefer100.*.wscore$", colnames(df_baseline))]
+list <- append(ctx, paste0(sctx, "_wscore"))
+atrophy_mapping_group1_cohend <- atrophy_mapping_group2_cohend <- atrophy_mapping_group1_pvalue <- atrophy_mapping_group2_pvalue <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group1_cohend) <- colnames(atrophy_mapping_group2_cohend) <- gsub(pattern = "_wscore", replacement = "_cohend", list)
+colnames(atrophy_mapping_group1_pvalue) <- colnames(atrophy_mapping_group2_pvalue) <- gsub(pattern = "_wscore", replacement = "_pvalue", list)
+for (i in 1:length(list)) {
+  d <- df_baseline_hydra[df_baseline_hydra$assignment_2=="1" | df_baseline_hydra$assignment_2=="-1", list[i]]
+  f <- df_baseline_hydra[df_baseline_hydra$assignment_2=="1" | df_baseline_hydra$assignment_2=="-1", "assignment_2"]
+  f <- factor(f, levels = c("-1", "1"))
+  cohend <- effsize::cohen.d(d, f)
+  ttest <- t.test(df_baseline_hydra[df_baseline_hydra$assignment_2=="1", list[i]], df_baseline_hydra[df_baseline_hydra$assignment_2=="-1", list[i]])
+  atrophy_mapping_group1_cohend[,i] <- cohend$estimate
+  atrophy_mapping_group1_pvalue[,i] <- ttest$p.value
+}
+for (i in 1:length(list)) {
+  d <- df_baseline_hydra[df_baseline_hydra$assignment_2=="2" | df_baseline_hydra$assignment_2=="-1", list[i]]
+  f <- df_baseline_hydra[df_baseline_hydra$assignment_2=="2" | df_baseline_hydra$assignment_2=="-1", "assignment_2"]
+  f <- factor(f, levels = c("-1", "2"))
+  cohend <- effsize::cohen.d(d, f)
+  ttest <- t.test(df_baseline_hydra[df_baseline_hydra$assignment_2=="2", list[i]], df_baseline_hydra[df_baseline_hydra$assignment_2=="-1", list[i]])
+  atrophy_mapping_group2_cohend[,i] <- cohend$estimate
+  atrophy_mapping_group2_pvalue[,i] <- ttest$p.value
+}
+atrophy_mapping_group1_pvalue[1,] <- p.adjust(atrophy_mapping_group1_pvalue[1,], method = "fdr")
+atrophy_mapping_group2_pvalue[1,] <- p.adjust(atrophy_mapping_group2_pvalue[1,], method = "fdr")
+# write out
+write.csv(atrophy_mapping_group1_cohend, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_group1_cohend.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group1_pvalue, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_group1_pfdr.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group2_cohend, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_group2_cohend.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group2_pvalue, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex114Parcels_group2_pfdr.csv"), row.names = FALSE)
+
+## SchaeferSubcortex 414 parcels
+hydra_labels <- read.csv(here::here("output/hydra_SchaeferSubcortex414Parcels/clustering/clustering_assignment.tsv"), sep = "\t")
+hydra_labels$assignment_2 <- factor(hydra_labels$assignment_2, levels = c("-1", "1", "2"))
+hydra_ARI <- as.data.frame(t(read.csv(here::here("output/hydra_SchaeferSubcortex414Parcels/clustering/adjusted_rand_index.tsv"), sep = "\t", header = FALSE)))
+colnames(hydra_ARI) <- c("N_subtypes", "ARI")
+hydra_ARI$ARI <- as.numeric(hydra_ARI$ARI)
+ggplot(data=hydra_ARI, aes(x=N_subtypes, y=ARI, group=1)) +
+  geom_line()+
+  geom_point()+
+  ylim(0,0.8)
+# write optimal clustering
+hydra_labels_2subtypes <- hydra_labels[, c("participant_id", "session_id", "diagnosis", "assignment_2")]
+write.csv(hydra_labels_2subtypes, here::here("data/hydra_SchaeferSubcortex414Parcels_2subtypes.csv"), row.names = FALSE)
+# explore atrophy patterns
+df_baseline_hydra <- merge(df_baseline, hydra_labels, by.x = "id", by.y = "participant_id")
+sctx <- c(paste("left", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"),
+          paste("right", c("accumbens_area",
+                          "amygdala",
+                          "caudate",
+                          "hippocampus",
+                          "pallidum",
+                          "putamen",
+                          "thalamus"),
+                sep = "_"))
+ctx <- colnames(df_baseline)[grep("^schaefer400.*.wscore$", colnames(df_baseline))]
+list <- append(ctx, paste0(sctx, "_wscore"))
+atrophy_mapping_group1_cohend <- atrophy_mapping_group2_cohend <- atrophy_mapping_group1_pvalue <- atrophy_mapping_group2_pvalue <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group1_cohend) <- colnames(atrophy_mapping_group2_cohend) <- gsub(pattern = "_wscore", replacement = "_cohend", list)
+colnames(atrophy_mapping_group1_pvalue) <- colnames(atrophy_mapping_group2_pvalue) <- gsub(pattern = "_wscore", replacement = "_pvalue", list)
+for (i in 1:length(list)) {
+  d <- df_baseline_hydra[df_baseline_hydra$assignment_2=="1" | df_baseline_hydra$assignment_2=="-1", list[i]]
+  f <- df_baseline_hydra[df_baseline_hydra$assignment_2=="1" | df_baseline_hydra$assignment_2=="-1", "assignment_2"]
+  f <- factor(f, levels = c("-1", "1"))
+  cohend <- effsize::cohen.d(d, f)
+  ttest <- t.test(df_baseline_hydra[df_baseline_hydra$assignment_2=="1", list[i]], df_baseline_hydra[df_baseline_hydra$assignment_2=="-1", list[i]])
+  atrophy_mapping_group1_cohend[,i] <- cohend$estimate
+  atrophy_mapping_group1_pvalue[,i] <- ttest$p.value
+}
+for (i in 1:length(list)) {
+  d <- df_baseline_hydra[df_baseline_hydra$assignment_2=="2" | df_baseline_hydra$assignment_2=="-1", list[i]]
+  f <- df_baseline_hydra[df_baseline_hydra$assignment_2=="2" | df_baseline_hydra$assignment_2=="-1", "assignment_2"]
+  f <- factor(f, levels = c("-1", "2"))
+  cohend <- effsize::cohen.d(d, f)
+  ttest <- t.test(df_baseline_hydra[df_baseline_hydra$assignment_2=="2", list[i]], df_baseline_hydra[df_baseline_hydra$assignment_2=="-1", list[i]])
+  atrophy_mapping_group2_cohend[,i] <- cohend$estimate
+  atrophy_mapping_group2_pvalue[,i] <- ttest$p.value
+}
+atrophy_mapping_group1_pvalue[1,] <- p.adjust(atrophy_mapping_group1_pvalue[1,], method = "fdr")
+atrophy_mapping_group2_pvalue[1,] <- p.adjust(atrophy_mapping_group2_pvalue[1,], method = "fdr")
+# write out
+write.csv(atrophy_mapping_group1_cohend, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_group1_cohend.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group1_pvalue, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_group1_pfdr.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group2_cohend, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_group2_cohend.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group2_pvalue, here::here("data/atrophy_cross/atrophy_baseline_SchaeferSubcortex414Parcels_group2_pfdr.csv"), row.names = FALSE)
+```
+
+
+
+### OLD
+
+
+
+```{r old compute baseline neighbour atrophy weighted by SC/FC/CGE, purl = FALSE}
+## SchaeferSubcortex 114 parcels
+# load atrophy map
+atrophy_mapping <- read.csv(here::here("data/atrophy_cross/PrograMS_atrophy_cross_SchaeferSubcortex114Parcels_group_cohend.csv"), header = TRUE, sep = ",")
+atrophy_ctx <- atrophy_mapping[,1:100]
+atrophy_sctx <- atrophy_mapping[,101:114]
+# load normative functional/structural connectivity matrices
+labels <- read.csv(here::here("data/fc/fc_SchaeferSubcortex114Parcels_labels.csv"), header = TRUE, sep = ",")
+fc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_ctx_schaefer_100.csv"), header = FALSE, sep = ","))
+fc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_sctx_schaefer_100.csv"), header = FALSE, sep = ","))
+sc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_ctx_schaefer_100.csv"), header = FALSE, sep = ","))
+sc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_sctx_schaefer_100.csv"), header = FALSE, sep = ","))
+sc_sctx <- sc_sctx[,1:100] # the sctx matrix contains also subcortico-subcortical connections
+cge_ctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex114Parcels_ctx.csv"), header = FALSE, sep = ","))
+cge_sctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex114Parcels_sctx.csv"), header = FALSE, sep = ","))
+
+neighbourhood_atrophy_sc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_sc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_sc_ctx[,i] <- NA
+  } else {
+    weight_vec <- sc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_sc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_sc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_sc_sctx[,i] <- NA
+  } else {
+    weight_vec <- sc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_ctx[,i] <- NA
+  } else {
+    weight_vec <- fc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_nosc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(fc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_ctx[,i] <- NA
+  } else {
+    weight_vec <- fc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_nosc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(fc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_cge_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_cge_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(cge_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_cge_ctx[,i] <- NA
+  } else {
+    weight_vec <- cge_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_cge_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_cge_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(cge_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+# write out
+write.csv(neighbourhood_atrophy_sc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_sc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_sc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_sc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_fc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_fc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_nosc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_fc_nosc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_nosc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_fc_nosc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_cge_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_cge_sctx.csv"), row.names = FALSE)
+
+## SchaeferSubcortex 414 parcels
+# load atrophy map
+atrophy_mapping <- read.csv(here::here("data/atrophy_cross/PrograMS_atrophy_cross_SchaeferSubcortex414Parcels_group_cohend.csv"), header = TRUE, sep = ",")
+atrophy_ctx <- atrophy_mapping[,1:400]
+atrophy_sctx <- atrophy_mapping[,401:414]
+# load normative functional/structural connectivity matrices
+labels <- read.csv(here::here("data/fc/fc_SchaeferSubcortex414Parcels_labels.csv"), header = TRUE, sep = ",")
+fc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_ctx_schaefer_400.csv"), header = FALSE, sep = ","))
+fc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_sctx_schaefer_400.csv"), header = FALSE, sep = ","))
+sc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_ctx_schaefer_400.csv"), header = FALSE, sep = ","))
+sc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_sctx_schaefer_400.csv"), header = FALSE, sep = ","))
+sc_sctx <- sc_sctx[,1:400] # the sctx matrix contains also subcortico-subcortical connections
+cge_ctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex414Parcels_ctx.csv"), header = FALSE, sep = ","))
+cge_sctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex414Parcels_sctx.csv"), header = FALSE, sep = ","))
+
+neighbourhood_atrophy_sc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_sc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_sc_ctx[,i] <- NA
+  } else {
+    weight_vec <- sc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_sc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_sc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_sc_sctx[,i] <- NA
+  } else {
+    weight_vec <- sc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_ctx[,i] <- NA
+  } else {
+    weight_vec <- fc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_nosc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(fc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_ctx[,i] <- NA
+  } else {
+    weight_vec <- fc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_nosc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(fc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_cge_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_cge_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(cge_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_cge_ctx[,i] <- NA
+  } else {
+    weight_vec <- cge_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_cge_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_cge_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(cge_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+# write out
+write.csv(neighbourhood_atrophy_sc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_sc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_sc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_sc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_fc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_fc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_nosc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_fc_nosc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_nosc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_fc_nosc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_cge_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_cge_sctx.csv"), row.names = FALSE)
+```
+
+
+
+
+
+
+```{r import/transform/merge clinical and structural MRI data - Freesurfer cross-sectional, purl = FALSE}
+### PrograMS clinical database
+PrograMS <- read.csv(here::here("data/PrograMS_v1.9.csv"), header = TRUE, sep = ",")
+PrograMS[c('ClinicalPhenotype','DMT','Clinical','BRBn','NPSother')] <- lapply(PrograMS[c('ClinicalPhenotype','DMT','Clinical','BRBn','NPSother')], factor)
+PrograMS$Sex <- factor(PrograMS$Sex, levels = c("female", "male"))
+PrograMS$Group <- factor(PrograMS$Group, levels = c("HC", "MS"))
+PrograMS[c('DoB','DateMRI','DateOfOnset')] <- lapply(PrograMS[c('DoB','DateMRI','DateOfOnset')], as.Date, format = "%d/%m/%Y")
+# standardize BRB scores
+BRB_tests <- colnames(PrograMS)[grep('BRB_', colnames(PrograMS))] 
+for (i in BRB_tests){
+  MDL <- lm(get(i) ~ Age + Sex + Education_years, 
+            data = PrograMS[PrograMS$Group=="HC" & PrograMS$Session=="ses-Y00",], 
+            na.action = na.exclude)
+  PrograMS[,paste0(i,'_wscore')] <- (PrograMS[,i] - predict(MDL, PrograMS)) / sd(MDL$residuals)
+}
+PrograMS$BRB_STROOP_wscore <- -1 * PrograMS$BRB_STROOP_wscore # flip sign for stroop
+PrograMS$MissingBRBtests <- rowSums(is.na(PrograMS[,BRB_tests])) 
+
+### sMRI derivatives
+# import and save vertex-wise thickness
+FS_subjects_dir <- "/data/anw/knw-work/g.pontillo/predictive_modelling/amsterdam/derivatives/freesurfer/cross"
+vertexwise_thickness <- SURFvextract(sdirpath = FS_subjects_dir, filename = here::here("data/PrograMS_FreesurferCross_VertexwiseThickness.Rds"), measure="thickness", template = "fsaverage5")
+# import aseg
+aseg <- fs_stats(sdirpath = FS_subjects_dir, ROImeasure = "Volume_mm3")
+aseg$FullID <- vertexwise_thickness[[1]]
+# import lesions
+PrograMS_sMRI <- read.csv(here::here("data/PrograMS_FreesurferLst.csv"), header = TRUE, sep = ",")
+# import cortical labels
+labels_schaefer100_7networks <- read.csv(here::here("data/hcp_connectivity/funcLabels_ctx_schaefer_100.csv"), header = FALSE, sep = ",")
+labels_schaefer400_7networks <- read.csv(here::here("data/hcp_connectivity/funcLabels_ctx_schaefer_400.csv"), header = FALSE, sep = ",")
+# merge
+df_thickness <- data.frame(vertexwise_thickness)
+colnames(df_thickness)[1] <- "FullID"
+df_PrograMS <- merge(PrograMS, aseg, by = "FullID") %>% merge(df_thickness, by = "FullID") %>% merge(PrograMS_sMRI[,c("FullID", "N_les", "TLV")])
+df_PrograMS <- clean_names(df_PrograMS)
+# w score
+volumes <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+CT <- colnames(df_PrograMS)[grep("^x+[0-9]$|^x.*.[0-9]$", colnames(df_PrograMS))]
+for (i in volumes){
+  MDL <- lm(get(i) ~ age + sex + estimated_total_intra_cranial_vol, data = df_PrograMS[df_PrograMS$session=="ses-Y00" & df_PrograMS$group=="HC",], na.action = na.exclude)
+  df_PrograMS[, paste0(i, "_wscore")] <- (df_PrograMS[, i] - predict(MDL, df_PrograMS)) / sd(MDL$residuals)
+}
+for (i in CT){
+  MDL <- lm(get(i) ~ age + sex, data = df_PrograMS[df_PrograMS$session=="ses-Y00" & df_PrograMS$group=="HC",], na.action = na.exclude)
+  df_PrograMS[, paste0(i, "_wscore")] <- (df_PrograMS[, i] - predict(MDL, df_PrograMS)) / sd(MDL$residuals)
+}
+# surf to atlas
+wscore_schaefer100 <- surf_to_atlas(df_PrograMS[, grep("^x+[0-9]_wscore$|^x.*.[0-9]_wscore$", colnames(df_PrograMS))], 4, mode = "mean")
+colnames(wscore_schaefer100) <- paste0("schaefer100_", labels_schaefer100_7networks, "_wscore")
+wscore_schaefer400 <- surf_to_atlas(df_PrograMS[, grep("^x+[0-9]_wscore$|^x.*.[0-9]_wscore$", colnames(df_PrograMS))], 6, mode = "mean")
+colnames(wscore_schaefer400) <- paste0("schaefer400_", labels_schaefer400_7networks, "_wscore")
+df_PrograMS <- cbind(df_PrograMS, wscore_schaefer100, wscore_schaefer400)
+
+### write out
+saveRDS(df_PrograMS, file = here::here("data/df_PrograMS.Rds"))
+```
+
+```{r cross-sectional atrophy maps, purl = FALSE}
+df_PrograMS <- readRDS(here::here("data/df_PrograMS.Rds"))
+## SchaeferSubcortex 114 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+ctx <- colnames(df_PrograMS)[grep("^schaefer100.*.wscore$", colnames(df_PrograMS))]
+list <- append(ctx, paste0(sctx, "_wscore"))
+atrophy_mapping_individuals_wscore <- df_PrograMS[df_PrograMS$session=="ses-Y00" & df_PrograMS$group=="MS", c("id",list)]
+column_index <- 2:(length(list)+1)
+atrophy_mapping_individuals_wscore[column_index] <- -1*atrophy_mapping_individuals_wscore[column_index] # flip so that more positive values correspond to greater atrophy
+atrophy_mapping_group_cohend <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group_cohend) <- gsub(pattern = "_wscore", replacement = "_cohend", list)
+for (i in 1:length(list)) {
+  d <- df_PrograMS[df_PrograMS$session=="ses-Y00", list[i]]
+  f <- df_PrograMS[df_PrograMS$session=="ses-Y00", "group"]
+  cohend <- effsize::cohen.d(d, f)
+  atrophy_mapping_group_cohend[,i] <- cohend$estimate
+}
+
+# write out
+write.csv(atrophy_mapping_individuals_wscore, here::here("data/atrophy_cross/PrograMS_atrophy_cross_SchaeferSubcortex114Parcels_individuals_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_cohend, here::here("data/atrophy_cross/PrograMS_atrophy_cross_SchaeferSubcortex114Parcels_group_cohend.csv"), row.names = FALSE)
+
+## SchaferSubcortex 414 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+ctx <- colnames(df_PrograMS)[grep("^schaefer400.*.wscore$", colnames(df_PrograMS))]
+list <- append(ctx, paste0(sctx, "_wscore"))
+atrophy_mapping_individuals_wscore <- df_PrograMS[df_PrograMS$session=="ses-Y00" & df_PrograMS$group=="MS", c("id",list)]
+column_index <- 2:(length(list)+1)
+atrophy_mapping_individuals_wscore[column_index] <- -1*atrophy_mapping_individuals_wscore[column_index] # flip so that more positive values correspond to greater atrophy
+atrophy_mapping_group_cohend <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group_cohend) <- gsub(pattern = "_wscore", replacement = "_cohend", list)
+for (i in 1:length(list)) {
+  d <- df_PrograMS[df_PrograMS$session=="ses-Y00", list[i]]
+  f <- df_PrograMS[df_PrograMS$session=="ses-Y00", "group"]
+  cohend <- effsize::cohen.d(d, f)
+  atrophy_mapping_group_cohend[,i] <- cohend$estimate
+}
+
+# write out
+write.csv(atrophy_mapping_individuals_wscore, here::here("data/atrophy_cross/PrograMS_atrophy_cross_SchaeferSubcortex414Parcels_individuals_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_cohend, here::here("data/atrophy_cross/PrograMS_atrophy_cross_SchaeferSubcortex414Parcels_group_cohend.csv"), row.names = FALSE)
+```
+
+
+```{r old disconnection maps, purl = FALSE}
+dir_lst <- "/data/anw/knw-work/g.pontillo/predictive_modelling/amsterdam/derivatives/lst"
+list_subs <- grep("^sub-PA.*.ses-Y00$",list.dirs(path = dir_lst, recursive = FALSE, full.names = FALSE), value = TRUE) # list of MS subjects at baseline  
+
+## SchaeferSubcortex 114 parcels 
+list <- list.files(path="/data/anw/knw-work/g.pontillo/predictive_modelling/amsterdam/derivatives/lst/disconnectome_SchaeferSubcortex114Parcels", pattern=".*sub-PA.*ses-Y00.*percent_parcel_SDC.mat", full.names=TRUE, recursive=TRUE) # list of baseline disconnection matrices  
+atlas <- read.csv("/data/anw/knw-work/g.pontillo/predictive_modelling/code/MRI_processing/atlases/CortexSubcortex/atlas-SchaeferSubcortex114Parcels_dseg.tsv", header = TRUE, sep = "\t") # atlas 
+labels <- as.character(atlas[,"label"]) # atlas labels
+roi <- length(labels)
+df_disc <- data.frame(matrix(nrow = length(list_subs), ncol = ((roi*(roi-1))/2)+1))
+colnames(df_disc)[1] <- "ID"
+for (i in 1:length(list_subs)) {
+  disc <- readMat(list[1])[[1]]
+  disc_flat <- disc[upper.tri(disc, diag = FALSE)] # this equals to using numpy.tril as R is column-major
+  df_disc[i,1] <- list_subs[i] 
+  df_disc[i,2:ncol(df_disc)] <- disc_flat
+} 
+index <- which(upper.tri(disc, diag = FALSE), arr.ind=TRUE)
+for (i in 1:dim(index)[1]){
+  colnames(df_disc)[1+i] <- paste0(labels[index[i,1]], 
+                                   "_to_",
+                                   labels[index[i,2]]) 
+}
+
+# average disconnectome
+average_disc_MS <- colMeans(df_disc[startsWith(df_disc$ID, "sub-PA"),-1], na.rm = TRUE)
+mat_MS <- matrix(nrow = roi, ncol = roi)
+mat_MS[upper.tri(mat_MS)] <- as.matrix(average_disc_MS)
+mat_MS <- as.matrix(Matrix::forceSymmetric(mat_MS, uplo = "U"))
+diag(mat_MS) <- 0
+mat_MS_ctx <- mat_MS[1:100, 1:100]
+mat_MS_sctx <- mat_MS[101:114,1:100]
+
+# write average and individuals disconnectomes
+write.table(mat_MS, here::here("data/disc/PrograMS_disc_SchaeferSubcortex114Parcels_MS.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(labels, here::here("data/disc/disc_SchaeferSubcortex114Parcels_labels.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_ctx, here::here("data/disc/PrograMS_disc_SchaeferSubcortex114Parcels_MS_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_sctx, here::here("data/disc/PrograMS_disc_SchaeferSubcortex114Parcels_MS_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.csv(df_disc, here::here("data/disc/PrograMS_disc_SchaeferSubcortex114Parcels_individuals.csv"), row.names = FALSE)
+
+## SchaeferSubcortex 414 parcels 
+list <- list.files(path="/data/anw/knw-work/g.pontillo/predictive_modelling/amsterdam/derivatives/lst/disconnectome_SchaeferSubcortex414Parcels", pattern=".*sub-PA.*ses-Y00.*percent_parcel_SDC.mat", full.names=TRUE, recursive=TRUE) # list of baseline disconnection matrices  
+atlas <- read.csv("/data/anw/knw-work/g.pontillo/predictive_modelling/code/MRI_processing/atlases/CortexSubcortex/atlas-SchaeferSubcortex414Parcels_dseg.tsv", header = TRUE, sep = "\t") # atlas 
+labels <- as.character(atlas[,"label"]) # atlas labels
+roi <- length(labels)
+df_disc <- data.frame(matrix(nrow = length(list_subs), ncol = ((roi*(roi-1))/2)+1))
+colnames(df_disc)[1] <- "ID"
+for (i in 1:length(list_subs)) {
+  disc <- readMat(list[1])[[1]]
+  disc_flat <- disc[upper.tri(disc, diag = FALSE)] # this equals to using numpy.tril as R is column-major
+  df_disc[i,1] <- list_subs[i] 
+  df_disc[i,2:ncol(df_disc)] <- disc_flat
+} 
+index <- which(upper.tri(disc, diag = FALSE), arr.ind=TRUE)
+for (i in 1:dim(index)[1]){
+  colnames(df_disc)[1+i] <- paste0(labels[index[i,1]], 
+                                   "_to_",
+                                   labels[index[i,2]]) 
+}
+
+# average disconnectome
+average_disc_MS <- colMeans(df_disc[startsWith(df_disc$ID, "sub-PA"),-1], na.rm = TRUE)
+mat_MS <- matrix(nrow = roi, ncol = roi)
+mat_MS[upper.tri(mat_MS)] <- as.matrix(average_disc_MS)
+mat_MS <- as.matrix(Matrix::forceSymmetric(mat_MS, uplo = "U"))
+diag(mat_MS) <- 0
+mat_MS_ctx <- mat_MS[1:400, 1:400]
+mat_MS_sctx <- mat_MS[401:414,1:400]
+
+# write average and individuals disconnectomes
+write.table(mat_MS, here::here("data/disc/PrograMS_disc_SchaeferSubcortex414Parcels_MS.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(labels, here::here("data/disc/disc_SchaeferSubcortex414Parcels_labels.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_ctx, here::here("data/disc/PrograMS_disc_SchaeferSubcortex414Parcels_MS_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_sctx, here::here("data/disc/PrograMS_disc_SchaeferSubcortex414Parcels_MS_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.csv(df_disc, here::here("data/disc/PrograMS_disc_SchaeferSubcortex414Parcels_individuals.csv"), row.names = FALSE)
+
+```
+
+```{r functional connectomes, purl = FALSE}
+dir_fmri <- "/data/anw/knw-work/g.pontillo/predictive_modelling/amsterdam/derivatives/xcpd_scrubbing"
+list_subs <- grep("sub-*",list.dirs(path = dir_fmri, recursive = FALSE, full.names = FALSE), value = TRUE) # list of subjects  
+## SchaeferSubcortex 114 parcels 
+list_pearson <- Sys.glob(file.path(dir_fmri,"sub-*","ses-Y00","func","*SchaeferSubcortex114Parcels_stat-pearsoncorrelation_relmat.tsv")) # list of connectivity matrices 
+atlas <- read.csv("/data/anw/knw-work/g.pontillo/predictive_modelling/code/MRI_processing/atlases/CortexSubcortex/atlas-SchaeferSubcortex114Parcels_dseg.tsv", header = TRUE, sep = "\t") # atlas 
+labels <- as.character(atlas[,"label"]) # atlas labels
+roi <- length(labels)
+df_fMRI <- data.frame(matrix(nrow = length(list_subs), ncol = ((roi*(roi-1))/2)+1))
+colnames(df_fMRI)[1] <- "ID"
+for (i in 1:length(list_subs)) {
+  pearson <- grep(list_subs[i], list_pearson, value = TRUE)
+  fc <- as.matrix(read.csv(pearson, header = TRUE, row.names = 1, sep = "\t"))
+  mode(fc) <- "numeric"
+  fc_z <- atan(fc)
+  fc_flat <- fc_z[upper.tri(fc_z, diag = FALSE)] # this equals to using numpy.tril as R is column-major 
+  df_fMRI[i,1] <- list_subs[i] 
+  df_fMRI[i,2:ncol(df_fMRI)] <- fc_flat
+} 
+index <- which(upper.tri(fc, diag = FALSE), arr.ind=TRUE)
+for (i in 1:dim(index)[1]){
+  colnames(df_fMRI)[1+i] <- paste0(labels[index[i,1]], 
+                                   "_to_",
+                                   labels[index[i,2]]) 
+}
+
+# average functional connectome
+average_fc_HC <- colMeans(df_fMRI[startsWith(df_fMRI$ID, "sub-HC"),-1], na.rm = TRUE)
+average_fc_HC <- abs(average_fc_HC)
+mat_HC <- matrix(nrow = roi, ncol = roi)
+mat_HC[upper.tri(mat_HC)] <- as.matrix(average_fc_HC)
+mat_HC <- as.matrix(Matrix::forceSymmetric(mat_HC, uplo = "U"))
+diag(mat_HC) <- 0
+mat_HC_ctx <- mat_HC[1:100, 1:100]
+mat_HC_sctx <- mat_HC[101:114,1:100]
+average_fc_MS <- colMeans(df_fMRI[startsWith(df_fMRI$ID, "sub-PA"),-1], na.rm = TRUE)
+average_fc_MS <- abs(average_fc_MS)
+mat_MS <- matrix(nrow = roi, ncol = roi)
+mat_MS[upper.tri(mat_MS)] <- as.matrix(average_fc_MS)
+mat_MS <- as.matrix(Matrix::forceSymmetric(mat_MS, uplo = "U"))
+diag(mat_MS) <- 0
+mat_MS_ctx <- mat_MS[1:100, 1:100]
+mat_MS_sctx <- mat_MS[101:114,1:100]
+
+# write average matrices
+write.table(mat_HC, here::here("data/fc/PrograMS_fc_SchaeferSubcortex114Parcels_HC.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_HC_ctx, here::here("data/fc/PrograMS_fc_SchaeferSubcortex114Parcels_HC_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_HC_sctx, here::here("data/fc/PrograMS_fc_SchaeferSubcortex114Parcels_HC_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS, here::here("data/fc/PrograMS_fc_SchaeferSubcortex114Parcels_MS.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_ctx, here::here("data/fc/PrograMS_fc_SchaeferSubcortex114Parcels_MS_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_sctx, here::here("data/fc/PrograMS_fc_SchaeferSubcortex114Parcels_MS_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(labels, here::here("data/fc/fc_SchaeferSubcortex114Parcels_labels.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+
+# write individual matrices 
+df_fMRI[is.na(df_fMRI)] <- 0 # put NA to 0
+write.csv(df_fMRI[startsWith(df_fMRI$ID, "sub-PA"),], here::here("data/fc/PrograMS_fc_SchaeferSubcortex114Parcels_individuals.csv"), row.names = FALSE)
+
+## SchaeferSubcortex 414 parcels 
+list_pearson <- Sys.glob(file.path(dir_fmri,"sub-*","ses-Y00","func","*SchaeferSubcortex414Parcels_stat-pearsoncorrelation_relmat.tsv")) # list of connectivity matrices 
+atlas <- read.csv("/data/anw/knw-work/g.pontillo/predictive_modelling/code/MRI_processing/atlases/CortexSubcortex/atlas-SchaeferSubcortex414Parcels_dseg.tsv", header = TRUE, sep = "\t") # atlas 
+labels <- as.character(atlas[,"label"]) # atlas labels
+roi <- length(labels)
+df_fMRI <- data.frame(matrix(nrow = length(list_subs), ncol = ((roi*(roi-1))/2)+1))
+colnames(df_fMRI)[1] <- "ID"
+for (i in 1:length(list_subs)) {
+  pearson <- grep(list_subs[i], list_pearson, value = TRUE)
+  fc <- as.matrix(read.csv(pearson, header = TRUE, row.names = 1, sep = "\t"))
+  mode(fc) <- "numeric"
+  fc_z <- atan(fc)
+  fc_flat <- fc_z[upper.tri(fc_z, diag = FALSE)] # this equals to using numpy.tril as R is column-major 
+  df_fMRI[i,1] <- list_subs[i] 
+  df_fMRI[i,2:ncol(df_fMRI)] <- fc_flat
+} 
+index <- which(upper.tri(fc, diag = FALSE), arr.ind=TRUE)
+for (i in 1:dim(index)[1]){
+  colnames(df_fMRI)[1+i] <- paste0(labels[index[i,1]], 
+                                   "_to_",
+                                   labels[index[i,2]]) 
+}
+
+# average functional connectome
+average_fc_HC <- colMeans(df_fMRI[startsWith(df_fMRI$ID, "sub-HC"),-1], na.rm = TRUE)
+average_fc_HC <- abs(average_fc_HC)
+mat_HC <- matrix(nrow = roi, ncol = roi)
+mat_HC[upper.tri(mat_HC)] <- as.matrix(average_fc_HC)
+mat_HC <- as.matrix(Matrix::forceSymmetric(mat_HC, uplo = "U"))
+diag(mat_HC) <- 0
+mat_HC_ctx <- mat_HC[1:400, 1:400]
+mat_HC_sctx <- mat_HC[401:414,1:400]
+average_fc_MS <- colMeans(df_fMRI[startsWith(df_fMRI$ID, "sub-PA"),-1], na.rm = TRUE)
+average_fc_MS <- abs(average_fc_MS)
+mat_MS <- matrix(nrow = roi, ncol = roi)
+mat_MS[upper.tri(mat_MS)] <- as.matrix(average_fc_MS)
+mat_MS <- as.matrix(Matrix::forceSymmetric(mat_MS, uplo = "U"))
+diag(mat_MS) <- 0
+mat_MS_ctx <- mat_MS[1:400, 1:400]
+mat_MS_sctx <- mat_MS[401:414,1:400]
+
+# write average matrices
+write.table(mat_HC, here::here("data/fc/PrograMS_fc_SchaeferSubcortex414Parcels_HC.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_HC_ctx, here::here("data/fc/PrograMS_fc_SchaeferSubcortex414Parcels_HC_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_HC_sctx, here::here("data/fc/PrograMS_fc_SchaeferSubcortex414Parcels_HC_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS, here::here("data/fc/PrograMS_fc_SchaeferSubcortex414Parcels_MS.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_ctx, here::here("data/fc/PrograMS_fc_SchaeferSubcortex414Parcels_MS_ctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(mat_MS_sctx, here::here("data/fc/PrograMS_fc_SchaeferSubcortex414Parcels_MS_sctx.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+write.table(labels, here::here("data/fc/fc_SchaeferSubcortex414Parcels_labels.csv"), sep = ',', row.names = FALSE, col.names = FALSE)
+
+# write individual matrices 
+df_fMRI[is.na(df_fMRI)] <- 0 # put NA to 0
+write.csv(df_fMRI[startsWith(df_fMRI$ID, "sub-PA"),], here::here("data/fc/PrograMS_fc_SchaeferSubcortex414Parcels_individuals.csv"), row.names = FALSE)
+```
+
+```{r structural connectomes, purl = FALSE}
+
+```
+
+
+
+```{r compute cross-sectional neighbour atrophy weighted by SC/FC/CGE, purl = FALSE}
+## SchaeferSubcortex 114 parcels
+# load atrophy map
+atrophy_mapping <- read.csv(here::here("data/atrophy_cross/PrograMS_atrophy_cross_SchaeferSubcortex114Parcels_group_cohend.csv"), header = TRUE, sep = ",")
+atrophy_ctx <- atrophy_mapping[,1:100]
+atrophy_sctx <- atrophy_mapping[,101:114]
+# load normative functional/structural connectivity matrices
+labels <- read.csv(here::here("data/fc/fc_SchaeferSubcortex114Parcels_labels.csv"), header = TRUE, sep = ",")
+fc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_ctx_schaefer_100.csv"), header = FALSE, sep = ","))
+fc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_sctx_schaefer_100.csv"), header = FALSE, sep = ","))
+sc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_ctx_schaefer_100.csv"), header = FALSE, sep = ","))
+sc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_sctx_schaefer_100.csv"), header = FALSE, sep = ","))
+sc_sctx <- sc_sctx[,1:100] # the sctx matrix contains also subcortico-subcortical connections
+cge_ctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex114Parcels_ctx.csv"), header = FALSE, sep = ","))
+cge_sctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex114Parcels_sctx.csv"), header = FALSE, sep = ","))
+
+neighbourhood_atrophy_sc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_sc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_sc_ctx[,i] <- NA
+  } else {
+    weight_vec <- sc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_sc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_sc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_sc_sctx[,i] <- NA
+  } else {
+    weight_vec <- sc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_ctx[,i] <- NA
+  } else {
+    weight_vec <- fc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_nosc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(fc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_ctx[,i] <- NA
+  } else {
+    weight_vec <- fc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_nosc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(fc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_cge_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_cge_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(cge_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_cge_ctx[,i] <- NA
+  } else {
+    weight_vec <- cge_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_cge_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_cge_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(cge_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+# write out
+write.csv(neighbourhood_atrophy_sc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_sc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_sc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_sc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_fc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_fc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_nosc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_fc_nosc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_nosc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_fc_nosc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_cge_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex114Parcels_cge_sctx.csv"), row.names = FALSE)
+
+## SchaeferSubcortex 414 parcels
+# load atrophy map
+atrophy_mapping <- read.csv(here::here("data/atrophy_cross/PrograMS_atrophy_cross_SchaeferSubcortex414Parcels_group_cohend.csv"), header = TRUE, sep = ",")
+atrophy_ctx <- atrophy_mapping[,1:400]
+atrophy_sctx <- atrophy_mapping[,401:414]
+# load normative functional/structural connectivity matrices
+labels <- read.csv(here::here("data/fc/fc_SchaeferSubcortex414Parcels_labels.csv"), header = TRUE, sep = ",")
+fc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_ctx_schaefer_400.csv"), header = FALSE, sep = ","))
+fc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/funcMatrix_sctx_schaefer_400.csv"), header = FALSE, sep = ","))
+sc_ctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_ctx_schaefer_400.csv"), header = FALSE, sep = ","))
+sc_sctx <- as.matrix(read.csv(here::here("data/hcp_connectivity/strucMatrix_sctx_schaefer_400.csv"), header = FALSE, sep = ","))
+sc_sctx <- sc_sctx[,1:400] # the sctx matrix contains also subcortico-subcortical connections
+cge_ctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex414Parcels_ctx.csv"), header = FALSE, sep = ","))
+cge_sctx <- as.matrix(read.csv(here::here("data/ge/CGE_SchaeferSubcortex414Parcels_sctx.csv"), header = FALSE, sep = ","))
+
+neighbourhood_atrophy_sc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_sc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_sc_ctx[,i] <- NA
+  } else {
+    weight_vec <- sc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_sc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_sc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_sc_sctx[,i] <- NA
+  } else {
+    weight_vec <- sc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_sc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(sc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_ctx[,i] <- NA
+  } else {
+    weight_vec <- fc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(sc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_nosc_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_fc_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(fc_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_ctx[,i] <- NA
+  } else {
+    weight_vec <- fc_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_fc_nosc_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(fc_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_cge_ctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_ctx)))
+colnames(neighbourhood_atrophy_cge_ctx) <- paste0(colnames(atrophy_ctx), "_neighbours")
+for (i in 1:length(atrophy_ctx)){
+  neighbours <- which(cge_ctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_cge_ctx[,i] <- NA
+  } else {
+    weight_vec <- cge_ctx[i,c(neighbours)]
+    neighbourhood_atrophy_cge_ctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+neighbourhood_atrophy_cge_sctx <- data.frame(matrix(nrow = 1, ncol = length(atrophy_sctx)))
+colnames(neighbourhood_atrophy_fc_sctx) <- paste0(colnames(atrophy_sctx), "_neighbours")
+for (i in 1:length(atrophy_sctx)){
+  neighbours <- which(cge_sctx[i,]!=0)
+  if(length(neighbours) == 0){
+    neighbourhood_atrophy_fc_sctx[,i] <- NA
+  } else {
+    weight_vec <- fc_sctx[i,c(neighbours)]
+    neighbourhood_atrophy_fc_sctx[,i] <- sum(atrophy_ctx[neighbours]*weight_vec)*(1/length(atrophy_ctx[neighbours]))
+  }
+}
+
+# write out
+write.csv(neighbourhood_atrophy_sc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_sc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_sc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_sc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_fc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_fc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_nosc_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_fc_nosc_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_fc_nosc_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_fc_nosc_sctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_ctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_cge_ctx.csv"), row.names = FALSE)
+write.csv(neighbourhood_atrophy_cge_sctx, here::here("data/atrophy_cross/PrograMS_neighbourhood_atrophy_cross_SchaeferSubcortex414Parcels_cge_sctx.csv"), row.names = FALSE)
+```
+
+
+```{r import/transform/merge clinical and structural MRI data - atrophy_long PrograMS, purl = FALSE}
+### PrograMS clinical database
+PrograMS <- read.csv(here::here("data/PrograMS_v1.9.csv"), header = TRUE, sep = ",")
+PrograMS[c('ClinicalPhenotype','DMT','Clinical','BRBn','NPSother')] <- lapply(PrograMS[c('ClinicalPhenotype','DMT','Clinical','BRBn','NPSother')], factor)
+PrograMS$Sex <- factor(PrograMS$Sex, levels = c("female", "male"))
+PrograMS$Group <- factor(PrograMS$Group, levels = c("HC", "MS"))
+PrograMS[c('DoB','DateMRI','DateOfOnset')] <- lapply(PrograMS[c('DoB','DateMRI','DateOfOnset')], as.Date, format = "%d/%m/%Y")
+# standardize BRB scores
+BRB_tests <- colnames(PrograMS)[grep('BRB_', colnames(PrograMS))] 
+for (i in BRB_tests){
+  MDL <- lm(get(i) ~ Age + Sex + Education_years, 
+            data = PrograMS[PrograMS$Group=="HC" & PrograMS$Session=="ses-Y00",], 
+            na.action = na.exclude)
+  PrograMS[,paste0(i,'_wscore')] <- (PrograMS[,i] - predict(MDL, PrograMS)) / sd(MDL$residuals)
+}
+PrograMS$BRB_STROOP_wscore <- -1 * PrograMS$BRB_STROOP_wscore # flip sign for stroop
+PrograMS$MissingBRBtests <- rowSums(is.na(PrograMS[,BRB_tests])) 
+
+### sMRI derivatives
+# import and save vertex-wise thickness
+FS_subjects_dir <- "/data/anw/knw-work/g.pontillo/predictive_modelling/atrophy_long/derivatives/freesurfer/prograMS"
+vertexwise_thickness <- SURFvextract(sdirpath = FS_subjects_dir, filename = here::here("data/atrophy_long_PrograMS_VertexwiseThickness.Rds"), measure="thickness", template = "fsaverage5")
+# import aseg and merge FS
+aseg <- fs_stats(sdirpath = FS_subjects_dir, ROImeasure = "Volume_mm3")
+colnames(aseg)[1] <- "FullID"
+df_thickness <- data.frame(vertexwise_thickness)
+colnames(df_thickness)[1] <- "FullID"
+PrograMS_FS <- merge(df_thickness, aseg, by = "FullID")
+PrograMS_FS_baseline <- PrograMS_FS[grep("^sub.*ses-Y05$", PrograMS_FS$FullID),]
+PrograMS_FS_long <- PrograMS_FS[grep("^sub.*ses-.*.long.sub.*", PrograMS_FS$FullID),]
+PrograMS_FS_long$FullID <- gsub(".long.*$", "", PrograMS_FS_long$FullID)
+# import LST
+PrograMS_LST <- read.csv(here::here("data/PrograMS_FreesurferLst.csv"), header = TRUE, sep = ",")
+# import cortical labels
+labels_schaefer100_7networks <- read.csv(here::here("data/hcp_connectivity/funcLabels_ctx_schaefer_100.csv"), header = FALSE, sep = ",")
+labels_schaefer400_7networks <- read.csv(here::here("data/hcp_connectivity/funcLabels_ctx_schaefer_400.csv"), header = FALSE, sep = ",")
+
+### merge clinical and sMRI databases
+df_PrograMS_baseline <- merge(PrograMS, PrograMS_FS_baseline, by = "FullID") %>% merge(PrograMS_LST[,c("FullID", "N_les", "TLV")])
+df_PrograMS_baseline <- clean_names(df_PrograMS_baseline)
+df_PrograMS_long <- merge(PrograMS, PrograMS_FS_long, by = "FullID") %>% merge(PrograMS_LST[,c("FullID", "N_les", "TLV")])
+df_PrograMS_long <- clean_names(df_PrograMS_long)
+
+### w score
+## long
+# define regions/vertices
+volumes <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+CT <- colnames(df_PrograMS_long)[grep("^x+[0-9]$|^x.*.[0-9]$", colnames(df_PrograMS_long))]
+# w score volumes/CT based on baseline HCs
+for (i in volumes){
+  MDL <- lm(get(i) ~ age + sex + estimated_total_intra_cranial_vol, data = df_PrograMS_baseline[df_PrograMS_baseline$group=="HC",], na.action = na.exclude)
+  df_PrograMS_long[, paste0(i, "_wscore")] <- (df_PrograMS_long[, i] - predict(MDL, df_PrograMS_long)) / sd(MDL$residuals)
+}
+for (i in CT){
+  MDL <- lm(get(i) ~ age + sex, data = df_PrograMS_baseline[df_PrograMS_baseline$group=="HC",], na.action = na.exclude)
+  df_PrograMS_long[, paste0(i, "_wscore")] <- (df_PrograMS_long[, i] - predict(MDL, df_PrograMS_long)) / sd(MDL$residuals)
+}
+# surf to atlas
+wscore_schaefer100 <- surf_to_atlas(df_PrograMS_long[, grep("^x+[0-9]_wscore$|^x.*.[0-9]_wscore$", colnames(df_PrograMS_long))], 4, mode = "mean")
+colnames(wscore_schaefer100) <- paste0("schaefer100_", labels_schaefer100_7networks, "_wscore")
+wscore_schaefer400 <- surf_to_atlas(df_PrograMS_long[, grep("^x+[0-9]_wscore$|^x.*.[0-9]_wscore$", colnames(df_PrograMS_long))], 6, mode = "mean")
+colnames(wscore_schaefer400) <- paste0("schaefer400_", labels_schaefer400_7networks, "_wscore")
+df_PrograMS_long <- cbind(df_PrograMS_long, wscore_schaefer100, wscore_schaefer400)
+## baseline
+# define regions/vertices
+volumes <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+CT <- colnames(df_PrograMS_baseline)[grep("^x+[0-9]$|^x.*.[0-9]$", colnames(df_PrograMS_baseline))]
+# w score volumes/CT based on baseline HCs
+for (i in volumes){
+  MDL <- lm(get(i) ~ age + sex + estimated_total_intra_cranial_vol, data = df_PrograMS_baseline[df_PrograMS_baseline$group=="HC",], na.action = na.exclude)
+  df_PrograMS_baseline[, paste0(i, "_wscore")] <- (df_PrograMS_baseline[, i] - predict(MDL, df_PrograMS_baseline)) / sd(MDL$residuals)
+}
+for (i in CT){
+  MDL <- lm(get(i) ~ age + sex, data = df_PrograMS_baseline[df_PrograMS_baseline$group=="HC",], na.action = na.exclude)
+  df_PrograMS_baseline[, paste0(i, "_wscore")] <- (df_PrograMS_baseline[, i] - predict(MDL, df_PrograMS_baseline)) / sd(MDL$residuals)
+}
+# surf to atlas
+wscore_schaefer100 <- surf_to_atlas(df_PrograMS_baseline[, grep("^x+[0-9]_wscore$|^x.*.[0-9]_wscore$", colnames(df_PrograMS_baseline))], 4, mode = "mean")
+colnames(wscore_schaefer100) <- paste0("schaefer100_", labels_schaefer100_7networks, "_wscore")
+wscore_schaefer400 <- surf_to_atlas(df_PrograMS_baseline[, grep("^x+[0-9]_wscore$|^x.*.[0-9]_wscore$", colnames(df_PrograMS_baseline))], 6, mode = "mean")
+colnames(wscore_schaefer400) <- paste0("schaefer400_", labels_schaefer400_7networks, "_wscore")
+df_PrograMS_baseline <- cbind(df_PrograMS_baseline, wscore_schaefer100, wscore_schaefer400)
+
+### write out
+saveRDS(df_PrograMS_long, file = here::here("data/df_PrograMS_long.Rds"))
+saveRDS(df_PrograMS_baseline, file = here::here("data/df_PrograMS_baseline.Rds"))
+```
+
+```{r cross-sectional and longitudinal atrophy maps atrophy_long PrograMS, purl = FALSE}
+### baseline atrophy
+df_PrograMS_baseline <- readRDS(here::here("data/df_PrograMS_baseline.Rds"))
+## SchaeferSubcortex 114 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+ctx <- colnames(df_PrograMS_baseline)[grep("^schaefer100.*.wscore$", colnames(df_PrograMS_baseline))]
+list <- append(ctx, paste0(sctx, "_wscore"))
+atrophy_mapping_individuals_wscore <- df_PrograMS_baseline[df_PrograMS_baseline$group=="MS", c("id",list)]
+column_index <- 2:(length(list)+1)
+atrophy_mapping_individuals_wscore[column_index] <- -1*atrophy_mapping_individuals_wscore[column_index] # flip so that more positive values correspond to greater atrophy
+atrophy_mapping_group_cohend <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group_cohend) <- gsub(pattern = "_wscore", replacement = "_cohend", list)
+for (i in 1:length(list)) {
+  d <- df_PrograMS_baseline[, list[i]]
+  f <- df_PrograMS_baseline[, "group"]
+  cohend <- effsize::cohen.d(d, f)
+  atrophy_mapping_group_cohend[,i] <- cohend$estimate
+}
+# write out
+write.csv(atrophy_mapping_individuals_wscore, here::here("data/atrophy_cross/PrograMS_atrophy_baseline_SchaeferSubcortex114Parcels_individuals_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_cohend, here::here("data/atrophy_cross/PrograMS_atrophy_baseline_SchaeferSubcortex114Parcels_group_cohend.csv"), row.names = FALSE)
+## SchaferSubcortex 414 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+ctx <- colnames(df_PrograMS_baseline)[grep("^schaefer400.*.wscore$", colnames(df_PrograMS_baseline))]
+list <- append(ctx, paste0(sctx, "_wscore"))
+atrophy_mapping_individuals_wscore <- df_PrograMS_baseline[df_PrograMS_baseline$group=="MS", c("id",list)]
+column_index <- 2:(length(list)+1)
+atrophy_mapping_individuals_wscore[column_index] <- -1*atrophy_mapping_individuals_wscore[column_index] # flip so that more positive values correspond to greater atrophy
+atrophy_mapping_group_cohend <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group_cohend) <- gsub(pattern = "_wscore", replacement = "_cohend", list)
+for (i in 1:length(list)) {
+  d <- df_PrograMS_baseline[, list[i]]
+  f <- df_PrograMS_baseline[, "group"]
+  cohend <- effsize::cohen.d(d, f)
+  atrophy_mapping_group_cohend[,i] <- cohend$estimate
+}
+# write out
+write.csv(atrophy_mapping_individuals_wscore, here::here("data/atrophy_cross/PrograMS_atrophy_baseline_SchaeferSubcortex414Parcels_individuals_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_cohend, here::here("data/atrophy_cross/PrograMS_atrophy_baseline_SchaeferSubcortex414Parcels_group_cohend.csv"), row.names = FALSE)
+
+### longitudinal atrophy
+df_PrograMS_long <- readRDS(here::here("data/df_PrograMS_long.Rds"))
+# vertex-level, no w-scoring 
+## SchaeferSubcortex 114 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+ctx <- colnames(df_PrograMS_baseline)[grep("^x+[0-9]$|^x.*.[0-9]$", colnames(df_PrograMS_baseline))]
+list <- append(ctx, sctx)
+# growth models
+df_PrograMS_long <- df_PrograMS_long %>%
+  dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+atrophy_mapping_individuals_slope <- data.frame(matrix(nrow = length(unique(df_PrograMS_long$id[df_PrograMS_long$group=="MS" & df_PrograMS_long$n_scans!=1])), ncol = length(sctx)+1))
+colnames(atrophy_mapping_individuals_slope) = c("id", paste0(sctx, "_slope")) # individual slopes of atrophy over time
+atrophy_mapping_group_tvalue <- data.frame(matrix(nrow = 1, ncol = length(sctx)))
+colnames(atrophy_mapping_group_tvalue) <- paste0(sctx, "_tvalue") # test statistic of the effect of time on volumes/CT
+for (i in sctx){
+  MDL <- lme(as.formula(paste0(i, " ~ fu_time")),
+             data = df_PrograMS_long[df_PrograMS_long$group=="MS" & df_PrograMS_long$n_scans!=1,],
+             random = ~fu_time|id, method="ML", na.action = na.exclude,
+             correlation = corAR1(0, form = ~fu_time|id),
+             control = list(msMaxIter = 1000, msMaxEval = 1000, sing.tol = 1e-20))
+  atrophy_mapping_individuals_slope$id <- row.names(coef(MDL))
+  atrophy_mapping_individuals_slope[,paste0(i,"_slope")] <- coef(MDL)$fu_time
+  atrophy_mapping_group_tvalue[,paste0(i,"_tvalue")] <- coef(summary(MDL))["fu_time", "t-value"]
+}
+# write out
+write.csv(atrophy_mapping_individuals_slope, here::here("data/atrophy_long/PrograMS_atrophy_long_SchaeferSubcortex114Parcels_individual_slopes.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_tvalue, here::here("data/atrophy_long/PrograMS_atrophy_long_SchaeferSubcortex114Parcels_group_t-values.csv"), row.names = FALSE)
+
+## SchaeferSubcortex 414 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+ctx <- colnames(df_PrograMS_long)[grep("^schaefer400.*.wscore$", colnames(df_PrograMS_long))]
+# growth models
+df_PrograMS_long <- df_PrograMS_long %>%
+  dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+list <- append(ctx, paste0(sctx, "_slope"))
+atrophy_mapping_individuals_slope <- data.frame(matrix(nrow = length(unique(df_PrograMS_long$id[df_PrograMS_long$group=="MS" & df_PrograMS_long$n_scans!=1])), ncol = length(list)+1))
+colnames(atrophy_mapping_individuals_slope) = c("id", list) # individual slopes of atrophy over time
+atrophy_mapping_group_tvalue <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group_tvalue) <- gsub(pattern = "_slope", replacement = "_tvalue", list) # test statistic of the effect of time on volumes/CT
+for (i in append(ctx, sctx)){
+  MDL <- lme(as.formula(paste0(i, "_wscore ~ fu_time")),
+             data = df_PrograMS_long[df_PrograMS_long$group=="MS" & df_PrograMS_long$n_scans!=1,],
+             random = ~fu_time|id, method="ML", na.action = na.exclude,
+             correlation = corCAR1(form = ~fu_time|id),
+             control = list(msMaxIter = 1000, msMaxEval = 1000, sing.tol = 1e-20))
+  atrophy_mapping_individuals_slope$id <- row.names(coef(MDL))
+  atrophy_mapping_individuals_slope[,i] <- coef(MDL)$fu_time
+  atrophy_mapping_group_tvalue[,i] <- coef(summary(MDL))["fu_time", "t-value"]
+}
+# write out
+write.csv(atrophy_mapping_individuals_slope, here::here("data/atrophy_long/PrograMS_atrophy_long_SchaeferSubcortex414Parcels_individual_slopes.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_tvalue, here::here("data/atrophy_long/PrograMS_atrophy_long_SchaeferSubcortex414Parcels_group_t-values.csv"), row.names = FALSE)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## region-level, w-scored
+## SchaeferSubcortex 114 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+ctx <- colnames(df_PrograMS_long)[grep("^schaefer100.*.wscore$", colnames(df_PrograMS_long))]
+list <- append(ctx, paste0(sctx, "_wscore"))
+# growth models
+df_PrograMS_long <- df_PrograMS_long %>%
+  dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+atrophy_mapping_individuals_slope <- data.frame(matrix(nrow = length(unique(df_PrograMS_long$id[df_PrograMS_long$group=="MS" & df_PrograMS_long$n_scans!=1])), ncol = length(list)+1))
+colnames(atrophy_mapping_individuals_slope) = c("id", gsub(pattern = "_wscore", replacement = "_slope", list)) # individual slopes of atrophy over time
+atrophy_mapping_group_tvalue <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group_tvalue) <- gsub(pattern = "_wscore", replacement = "_tvalue", list) # test statistic of the effect of time on volumes/CT
+for (i in list){
+  MDL <- lme(as.formula(paste0(i, " ~ fu_time")),
+             data = df_PrograMS_long[df_PrograMS_long$group=="MS" & df_PrograMS_long$n_scans!=1,],
+             random = ~fu_time|id, method="ML", na.action = na.exclude,
+             correlation = corAR1(0, form = ~fu_time|id),
+             control = list(msMaxIter = 1000, msMaxEval = 1000, sing.tol = 1e-20))
+  atrophy_mapping_individuals_slope$id <- row.names(coef(MDL))
+  atrophy_mapping_individuals_slope[,gsub(pattern = "_wscore", replacement = "_slope", i)] <- coef(MDL)$fu_time
+  atrophy_mapping_group_tvalue[,gsub(pattern = "_wscore", replacement = "_tvalue", i)] <- coef(summary(MDL))["fu_time", "t-value"]
+}
+# write out
+write.csv(atrophy_mapping_individuals_slope, here::here("data/atrophy_long/PrograMS_atrophy_long_SchaeferSubcortex114Parcels_individual_slopes.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_tvalue, here::here("data/atrophy_long/PrograMS_atrophy_long_SchaeferSubcortex114Parcels_group_t-values.csv"), row.names = FALSE)
+
+## SchaeferSubcortex 414 parcels
+sctx <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+ctx <- colnames(df_PrograMS_long)[grep("^schaefer400.*.wscore$", colnames(df_PrograMS_long))]
+# growth models
+df_PrograMS_long <- df_PrograMS_long %>%
+  dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+list <- append(ctx, paste0(sctx, "_slope"))
+atrophy_mapping_individuals_slope <- data.frame(matrix(nrow = length(unique(df_PrograMS_long$id[df_PrograMS_long$group=="MS" & df_PrograMS_long$n_scans!=1])), ncol = length(list)+1))
+colnames(atrophy_mapping_individuals_slope) = c("id", list) # individual slopes of atrophy over time
+atrophy_mapping_group_tvalue <- data.frame(matrix(nrow = 1, ncol = length(list)))
+colnames(atrophy_mapping_group_tvalue) <- gsub(pattern = "_slope", replacement = "_tvalue", list) # test statistic of the effect of time on volumes/CT
+for (i in append(ctx, sctx)){
+  MDL <- lme(as.formula(paste0(i, "_wscore ~ fu_time")),
+             data = df_PrograMS_long[df_PrograMS_long$group=="MS" & df_PrograMS_long$n_scans!=1,],
+             random = ~fu_time|id, method="ML", na.action = na.exclude,
+             correlation = corAR1(0, form = ~fu_time|id),
+             control = list(msMaxIter = 1000, msMaxEval = 1000, sing.tol = 1e-20))
+  atrophy_mapping_individuals_slope$id <- row.names(coef(MDL))
+  atrophy_mapping_individuals_slope[,i] <- coef(MDL)$fu_time
+  atrophy_mapping_group_tvalue[,i] <- coef(summary(MDL))["fu_time", "t-value"]
+}
+# write out
+write.csv(atrophy_mapping_individuals_slope, here::here("data/atrophy_long/PrograMS_atrophy_long_SchaeferSubcortex414Parcels_individual_slopes.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group_tvalue, here::here("data/atrophy_long/PrograMS_atrophy_long_SchaeferSubcortex414Parcels_group_t-values.csv"), row.names = FALSE)
+```
+
+# OLD CODE
+
+
+```{r import/transform/merge clinical and structural MRI data 2, purl = FALSE}
+### PrograMS clinical database
+PrograMS <- read.csv(here::here("data/PrograMS_v1.9.csv"), header = TRUE, sep = ",")
+PrograMS[c('Group','ClinicalPhenotype','DMT','Clinical','BRBn','NPSother')] <- lapply(PrograMS[c('Group','ClinicalPhenotype','DMT','Clinical','BRBn','NPSother')], factor)
+PrograMS$Sex <- factor(PrograMS$Sex, levels = c("female", "male"))
+PrograMS[c('DoB','DateMRI','DateOfOnset')] <- lapply(PrograMS[c('DoB','DateMRI','DateOfOnset')], as.Date, format = "%d/%m/%Y")
+# standardize BRB scores
+BRB_tests <- colnames(PrograMS)[grep('BRB_', colnames(PrograMS))] 
+for (i in BRB_tests){
+  MDL <- lm(get(i) ~ Age + Sex + Education_years, 
+            data = PrograMS[PrograMS$Group=="HC" & PrograMS$Session=="ses-Y00",], 
+            na.action = na.exclude)
+  PrograMS[,paste0(i,'_wscore')] <- (PrograMS[,i] - predict(MDL, PrograMS)) / sd(MDL$residuals)
+}
+PrograMS$BRB_STROOP_wscore <- -1 * PrograMS$BRB_STROOP_wscore # flip sign for stroop
+PrograMS$MissingBRBtests <- rowSums(is.na(PrograMS[,BRB_tests])) 
+
+### sMRI derivatives
+# import Freesurfer and LST outputs 
+PrograMS_sMRI <- read.csv(here::here("data/PrograMS_FreesurferLst.csv"), header = TRUE, sep = ",")
+df_PrograMS <- merge(PrograMS, PrograMS_sMRI, by = c("ID", "Session", "FullID"))
+df_PrograMS <- clean_names(df_PrograMS)
+## model atrophy
+# w-score CT/volumes
+volumes <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+CT <- colnames(df_PrograMS)[grep("_thickness",colnames(df_PrograMS))]
+# #################### longitudinal modelling ##############################
+Normative_HC <- df_PrograMS[df_PrograMS$group=="HC" & (df_PrograMS$session=="ses-Y00" | df_PrograMS$session=="ses-Y05"),]
+Normative_HC <- Normative_HC[Normative_HC$id %in% Normative_HC$id[duplicated(Normative_HC$id)],] # identify healthy controls with scans at both Y00 and Y05
+for (i in volumes){
+  MDL_pre <- lm(get(i) ~ poly(age, 2) + sex + estimated_total_intra_cranial_vol, data = Normative_HC[Normative_HC$session=="ses-Y00",], na.action = na.exclude)
+  df_PrograMS[df_PrograMS$session=="ses-Y00", paste0(i, "_wscore")] <- (df_PrograMS[df_PrograMS$session=="ses-Y00", i] - predict(MDL_pre, df_PrograMS[df_PrograMS$session=="ses-Y00",])) / sd(MDL_pre$residuals) # model pre-upgrade
+  MDL_post <- lm(get(i) ~ poly(age, 2) + sex + estimated_total_intra_cranial_vol, data = Normative_HC[Normative_HC$session=="ses-Y05",], na.action = na.exclude)
+  df_PrograMS[df_PrograMS$session=="ses-Y05" | df_PrograMS$session=="ses-Y10", paste0(i, "_wscore")] <- (df_PrograMS[df_PrograMS$session=="ses-Y05" | df_PrograMS$session=="ses-Y10", i] - predict(MDL_post, df_PrograMS[df_PrograMS$session=="ses-Y05" | df_PrograMS$session=="ses-Y10",])) / sd(MDL_post$residuals) # model post-upgrade
+}
+for (i in CT){
+  MDL_pre <- lm(get(i) ~ poly(age, 2) + sex, data = Normative_HC[Normative_HC$session=="ses-Y00",], na.action = na.exclude)
+  df_PrograMS[df_PrograMS$session=="ses-Y00", paste0(i, "_wscore")] <- (df_PrograMS[df_PrograMS$session=="ses-Y00", i] - predict(MDL_pre, df_PrograMS[df_PrograMS$session=="ses-Y00",])) / sd(MDL_pre$residuals) # model pre-upgrade
+  MDL_post <- lm(get(i) ~ poly(age, 2) + sex, data = Normative_HC[Normative_HC$session=="ses-Y05",], na.action = na.exclude)
+  df_PrograMS[df_PrograMS$session=="ses-Y05" | df_PrograMS$session=="ses-Y10", paste0(i, "_wscore")] <- (df_PrograMS[df_PrograMS$session=="ses-Y05" | df_PrograMS$session=="ses-Y10", i] - predict(MDL_post, df_PrograMS[df_PrograMS$session=="ses-Y05" | df_PrograMS$session=="ses-Y10",])) / sd(MDL_post$residuals) # model post-upgrade
+}
+# growth models
+df_PrograMS <- df_PrograMS %>%
+  dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+atrophy_mapping_individuals <- data.frame(matrix(nrow = length(unique(df_PrograMS$id[df_PrograMS$group=="MS" & df_PrograMS$n_scans!=1 & (df_PrograMS$session=="ses-Y00" | df_PrograMS$session=="ses-Y05")])), ncol = length(append(volumes,CT))+1))
+colnames(atrophy_mapping_individuals) = c("id", append(volumes,CT)) # individual slopes of atrophy over time
+atrophy_mapping_group <- data.frame(matrix(nrow = 1, ncol = length(append(volumes,CT))))
+colnames(atrophy_mapping_group) = c(append(volumes,CT)) # test statistic of the effect of time on volumes/CT
+for (i in append(volumes, CT)){
+  MDL <- lme(as.formula(paste0(i, "_wscore ~ fu_time")),
+             data = df_PrograMS[df_PrograMS$group=="MS" & df_PrograMS$n_scans!=1 & (df_PrograMS$session=="ses-Y00" | df_PrograMS$session=="ses-Y05"),],
+             random = ~fu_time|id, method="ML", na.action = na.exclude,
+             correlation = corAR1(0, form = ~fu_time|id),
+             control = list(msMaxIter = 1000, msMaxEval = 1000, sing.tol = 1e-20))
+  atrophy_mapping_individuals$id <- row.names(coef(MDL))
+  atrophy_mapping_individuals[,i] <- coef(MDL)$fu_time
+  atrophy_mapping_group[,i] <- coef(summary(MDL))["fu_time", "t-value"]
+}
+# excess atrophy
+atrophy_mapping_individuals <- data.frame(matrix(nrow = length(unique(df_PrograMS$id[df_PrograMS$n_scans!=1 & (df_PrograMS$session=="ses-Y00" | df_PrograMS$session=="ses-Y05")])), ncol = length(append(volumes,CT))+1))
+colnames(atrophy_mapping_individuals) = c("id", append(volumes,CT)) # individual slopes of atrophy over time
+atrophy_mapping_group <- data.frame(matrix(nrow = 1, ncol = length(append(volumes,CT))))
+colnames(atrophy_mapping_group) = c(append(volumes,CT)) # test statistic of the effect of time on volumes/CT
+for (i in append(volumes, CT)){
+  MDL <- lme(as.formula(paste0(i, " ~ fu_time + group*fu_time + poly(age, 2)*fu_time + sex*fu_time")),
+             data = df_PrograMS[df_PrograMS$n_scans!=1 & (df_PrograMS$session=="ses-Y00" | df_PrograMS$session=="ses-Y05"),],
+             random = ~fu_time|id, method="ML", na.action = na.exclude,
+             correlation = corAR1(0, form = ~fu_time|id),
+             control = list(msMaxIter = 1000, msMaxEval = 1000, sing.tol = 1e-20))
+  atrophy_mapping_individuals$id <- row.names(coef(MDL))
+  atrophy_mapping_individuals[,i] <- coef(MDL)$fu_time
+  atrophy_mapping_group[,i] <- coef(summary(MDL))["fu_time:groupMS", "t-value"]
+}
+write.csv(atrophy_mapping_individuals, here::here("data/PrograMS_atrophy_long_individual_slopes.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group, here::here("data/PrograMS_atrophy_long_group_t-values.csv"), row.names = FALSE)
+# ######################### longitudinal modelling ####################
+for (i in volumes){
+  MDL <- lm(get(i) ~ age + sex + estimated_total_intra_cranial_vol, data = df_PrograMS[df_PrograMS$session=="ses-Y00" & df_PrograMS$group=="HC",], na.action = na.exclude)
+  df_PrograMS[, paste0(i, "_wscore")] <- (df_PrograMS[, i] - predict(MDL, df_PrograMS)) / sd(MDL$residuals)
+}
+for (i in CT){
+  MDL <- lm(get(i) ~ age + sex, data = df_PrograMS[df_PrograMS$session=="ses-Y00" & df_PrograMS$group=="HC",], na.action = na.exclude)
+  df_PrograMS[, paste0(i, "_wscore")] <- (df_PrograMS[, i] - predict(MDL, df_PrograMS)) / sd(MDL$residuals)
+}
+atrophy_mapping_individuals <- df_PrograMS[df_PrograMS$group=="MS" & df_PrograMS$session=="ses-Y00", c("id", paste0(append(CT,volumes), "_wscore"))]
+atrophy_mapping_group <- as.data.frame.list(colMeans(atrophy_mapping_individuals[,-1]))
+write.csv(atrophy_mapping_individuals, here::here("data/PrograMS_atrophy_baseline_individual_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group, here::here("data/PrograMS_atrophy_baseline_group_wscore.csv"), row.names = FALSE)
+
+# import parcel disconnection from LQT
+list <- list.files(path=here("./data/Schaefer100_Subcortex_nodes/"),
+                   pattern="*.node", full.names=TRUE, recursive=FALSE)
+disconnection_files <- lapply(list,read.table)
+regions <- disconnection_files[[1]][,6]
+df_node_disconnection <- data.frame(matrix(nrow = length(disconnection_files), ncol = length(regions)+1))
+colnames(df_node_disconnection) = c("ID",paste0(regions,"_disc")) 
+for (i in 1:length(disconnection_files)) {
+  df_node_disconnection$ID[i] <- substr(basename(list[i]),1,15)
+  df_node_disconnection[i,2:ncol(df_node_disconnection)] <- t(disconnection_files[[i]][,5]) 
+}
+
+## write merged dataframe
+save(df_PrograMS, file = here::here("data/df_PrograMS.RData"))
+write.csv(df_PrograMS, here::here("data/df_PrograMS.csv"), row.names = FALSE)
+
+```
+
+```{r import/transform/merge clinical and structural MRI data - Freesurfer long,purl = FALSE}
+### PrograMS clinical database
+PrograMS <- read.csv(here::here("data/PrograMS_v1.9.csv"), header = TRUE, sep = ",")
+PrograMS[c('Group','ClinicalPhenotype','DMT','Clinical','BRBn','NPSother')] <- lapply(PrograMS[c('Group','ClinicalPhenotype','DMT','Clinical','BRBn','NPSother')], factor)
+PrograMS$Sex <- factor(PrograMS$Sex, levels = c("female", "male"))
+PrograMS[c('DoB','DateMRI','DateOfOnset')] <- lapply(PrograMS[c('DoB','DateMRI','DateOfOnset')], as.Date, format = "%d/%m/%Y")
+# standardize BRB scores
+BRB_tests <- colnames(PrograMS)[grep('BRB_', colnames(PrograMS))] 
+for (i in BRB_tests){
+  MDL <- lm(get(i) ~ Age + Sex + Education_years, 
+            data = PrograMS[PrograMS$Group=="HC" & PrograMS$Session=="ses-Y00",], 
+            na.action = na.exclude)
+  PrograMS[,paste0(i,'_wscore')] <- (PrograMS[,i] - predict(MDL, PrograMS)) / sd(MDL$residuals)
+}
+PrograMS$BRB_STROOP_wscore <- -1 * PrograMS$BRB_STROOP_wscore # flip sign for stroop
+PrograMS$MissingBRBtests <- rowSums(is.na(PrograMS[,BRB_tests])) 
+
+### sMRI derivatives
+# import Freesurfer and LST outputs 
+PrograMS_sMRI <- read.csv(here::here("data/PrograMS_FreesurferLong.csv"), header = TRUE, sep = ",")
+df_PrograMS <- merge(PrograMS, PrograMS_sMRI, by = c("ID", "Session", "FullID"))
+df_PrograMS <- clean_names(df_PrograMS)
+## model atrophy
+volumes <- c(paste("left", c("accumbens_area",
+                             "amygdala",
+                             "caudate",
+                             "hippocampus",
+                             "pallidum",
+                             "putamen", 
+                             "thalamus"),  
+                  sep = "_"), 
+             paste("right", c("accumbens_area",
+                              "amygdala",
+                              "caudate",
+                              "hippocampus",
+                              "pallidum",
+                              "putamen",
+                              "thalamus"),
+                   sep = "_"))
+CT <- colnames(df_PrograMS)[grep("_thickness",colnames(df_PrograMS))]
+#################### longitudinal modelling ##############################
+# growth models
+df_PrograMS <- df_PrograMS %>%
+  dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+atrophy_mapping_individuals <- data.frame(matrix(nrow = length(unique(df_PrograMS$id)), ncol = length(append(volumes,CT))+1))
+colnames(atrophy_mapping_individuals) = c("id", append(volumes,CT)) # individual slopes of atrophy over time
+atrophy_mapping_group <- data.frame(matrix(nrow = 1, ncol = length(append(volumes,CT))))
+colnames(atrophy_mapping_group) = c(append(volumes,CT)) # test statistic for the excess atrophy
+for (i in append(volumes, CT)){
+  MDL <- lme(as.formula(paste0(i, " ~ fu_time + group*fu_time")),
+             data = df_PrograMS,
+             random = ~fu_time|id, method="ML", na.action = na.exclude,
+             correlation = corAR1(0, form = ~fu_time|id),
+             control = list(msMaxIter = 1000, msMaxEval = 1000, sing.tol = 1e-20))
+  atrophy_mapping_individuals$id <- row.names(coef(MDL))
+  atrophy_mapping_individuals[,i] <- coef(MDL)$fu_time
+  atrophy_mapping_group[,i] <- coef(summary(MDL))["fu_time:groupMS", "t-value"]
+}
+write.csv(atrophy_mapping_individuals, here::here("data/PrograMS_excessatrophy_long_individual_slopes.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group, here::here("data/PrograMS_excessatrophy_long_group_t-values.csv"), row.names = FALSE)
+######################### longitudinal modelling ####################
+```
+
+
+
+
+```{r import/transform/merge clinical and structural MRI data - Freesurfer cross-sectional 2, purl = FALSE}
+# model atrophy
+df_PrograMS <- readRDS(here::here("data/df_PrograMS.RDS"))
+df_PrograMS <- cbind(df_PrograMS, surf_to_atlas(df_PrograMS[, grep("^x+[0-9]_wscore$|^x.*.[0-9]_wscore$", colnames(df_PrograMS))], 4, mode = "mean"))
+
+
+
+atrophy_mapping_individuals <- df_PrograMS[df_PrograMS$group=="MS" & df_PrograMS$session=="ses-Y00", c("id", paste0(append(CT,volumes), "_wscore"))]
+atrophy_mapping_group <- as.data.frame.list(colMeans(atrophy_mapping_individuals[,-1]))
+write.csv(atrophy_mapping_individuals, here::here("data/PrograMS_atrophy_baseline_individual_wscore.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group, here::here("data/PrograMS_atrophy_baseline_group_wscore.csv"), row.names = FALSE)
+
+# import parcel disconnection from LQT
+list <- list.files(path=here("./data/Schaefer100_Subcortex_nodes/"),
+                   pattern="*.node", full.names=TRUE, recursive=FALSE)
+disconnection_files <- lapply(list,read.table)
+regions <- disconnection_files[[1]][,6]
+df_node_disconnection <- data.frame(matrix(nrow = length(disconnection_files), ncol = length(regions)+1))
+colnames(df_node_disconnection) = c("ID",paste0(regions,"_disc")) 
+for (i in 1:length(disconnection_files)) {
+  df_node_disconnection$ID[i] <- substr(basename(list[i]),1,15)
+  df_node_disconnection[i,2:ncol(df_node_disconnection)] <- t(disconnection_files[[i]][,5]) 
+}
+
+## write merged dataframe
+save(df_PrograMS, file = here::here("data/df_PrograMS.RData"))
+write.csv(df_PrograMS, here::here("data/df_PrograMS.csv"), row.names = FALSE)
+
+
+
+
+
+
+
+
+#################### longitudinal modelling ##############################
+# growth models
+df_PrograMS <- df_PrograMS %>%
+  dplyr::group_by(id) %>%
+  dplyr::mutate(n_scans=n()) # add number of scans
+atrophy_mapping_individuals <- data.frame(matrix(nrow = length(unique(df_PrograMS$id)), ncol = length(append(volumes,CT))+1))
+colnames(atrophy_mapping_individuals) = c("id", append(volumes,CT)) # individual slopes of atrophy over time
+atrophy_mapping_group <- data.frame(matrix(nrow = 1, ncol = length(append(volumes,CT))))
+colnames(atrophy_mapping_group) = c(append(volumes,CT)) # test statistic for the excess atrophy
+for (i in append(volumes, CT)){
+  MDL <- lme(as.formula(paste0(i, " ~ fu_time + group*fu_time")),
+             data = df_PrograMS,
+             random = ~fu_time|id, method="ML", na.action = na.exclude,
+             correlation = corAR1(0, form = ~fu_time|id),
+             control = list(msMaxIter = 1000, msMaxEval = 1000, sing.tol = 1e-20))
+  atrophy_mapping_individuals$id <- row.names(coef(MDL))
+  atrophy_mapping_individuals[,i] <- coef(MDL)$fu_time
+  atrophy_mapping_group[,i] <- coef(summary(MDL))["fu_time:groupMS", "t-value"]
+}
+write.csv(atrophy_mapping_individuals, here::here("data/PrograMS_excessatrophy_long_individual_slopes.csv"), row.names = FALSE)
+write.csv(atrophy_mapping_group, here::here("data/PrograMS_excessatrophy_long_group_t-values.csv"), row.names = FALSE)
+######################### longitudinal modelling ####################
+```
+
+
+
+```{r import/transorm/merge functional MRI data, purl = FALSE}
+load(here::here("data/df_PrograMS.RData"))
+
+## import fMRI derivatives
+dir_fmri <- "/data/anw/knw-work/g.pontillo/predictive_modelling/amsterdam/derivatives/xcpd_scrubbing"
+list_subs <- grep("sub-*", list.dirs(dir_fmri, recursive = FALSE, full.names = FALSE), value = TRUE) # list of subjects  
+list_pearson <- Sys.glob(file.path(dir_fmri,"sub-*","ses-Y00","func","*seg-SchaeferSubcortex119Parcels_stat-pearsoncorrelation_relmat.tsv")) # list of connectivity matrices 
+atlas <- read.csv("/data/anw/knw-work/g.pontillo/predictive_modelling/code/MRI_processing/atlases/atlas-SchaeferSubcortex119Parcels_dseg.tsv", header = TRUE, sep = "\t") # atlas 
+labels <- as.character(atlas[,"label"]) # atlas labels 
+roi <- length(labels)
+PrograMS_fMRI <- data.frame(matrix(nrow = length(list_subs), ncol = ((roi*(roi-1))/2)+1))
+colnames(PrograMS_fMRI)[1] <- "ID"
+index <- which(upper.tri(fc, diag = FALSE), arr.ind=TRUE)
+for (i in 1:dim(index)[1]){
+  colnames(df_fMRI)[1+i] <- paste0(labels[index[i,1]], 
+                                   "_to_",
+                                   labels[index[i,2]]) 
+}
+for (i in 1:length(list_subs)) {
+  fisher <- grep(list_subs[i], list_fisher, value = TRUE)
+  fc <- as.matrix(read.csv(fisher, header = TRUE, row.names = 1, sep = "\t"))
+  fc_flat <- fc[upper.tri(fc, diag = FALSE)] # this equals to using numpy.tril as R is column-major 
+  df_fMRI[i,1] <- list_subs[i] 
+  df_fMRI[i,2:ncol(df_fMRI)] <- fc_flat
+} 
+df_fMRI[df_fMRI=="n/a"] <- 0 # put n/a to 0   
+write.csv(df_fMRI, here::here("data/df_fMRI-scrubbing_amsterdam.csv"), row.names = FALSE)
+
+# compute centrality
+renv::deactivate() # renv has a problem with igraph, do this outside of environment
+library(igraph)
+```
+
+```{r import/transorm/merge diffusion MRI data,purl = FALSE}
+## import dMRI derivatives
+
+# compute centrality
+
+```
+
+```{r vertex-level analyses, purl = FALSE}
+library(VertexWiseR)
+SURFvextract(sdirpath = "/data/anw/knw-work/g.pontillo/predictive_modelling/amsterdam/derivatives/freesurfer/ses-Y00/", filename = "freesurfer_ses-Y00.rds", template = "fsaverage5", measure = "thickness", subj_ID = TRUE)
+```
+
+
+
+
+
