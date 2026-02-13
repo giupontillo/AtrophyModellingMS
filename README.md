@@ -9,7 +9,8 @@ This repository contains the code associated with our research paper to reproduc
 
 **Authors:** Mar Barrantes-Cepas, Mario Tranfa, David R. van Nederpelt, Ismail Koubiyr, Luigi Lorenzini, Birgit Helmlinger, Stefan Ropele, Daniela Pinter, Christian Enzinger, Tomas Uher, Manuela Vaneckova, Joep Killestein, Eva M.M. Strijbis, Martijn D. Steenwijk, Hugo Vrenken, Frederik Barkhof, Menno M. Schoonheim†, Giuseppe Pontillo†
 
-**Correspondence:** M. Barrantes-Cepas, m.barrantescepas@amsterdamumc.nl
+**Correspondence:** M. Barrantes-Cepas, m.barrantescepas@amsterdamumc.nl 
+
 † These authors contributed equally to this work. 
 
 ## Abstract
@@ -20,7 +21,7 @@ Clinical progression is strongly linked to grey matter atrophy in multiple scler
 
 ```
 .
-├── results/                # Output figures and tables documentation
+├── figures/                # Output figures and tables documentation
 ├── LICENSE                 # License 
 ├── README.md               # This file
 └── scripts/                # Analysis scripts and models
@@ -29,15 +30,15 @@ Clinical progression is strongly linked to grey matter atrophy in multiple scler
     ├── 03.epicenter-mapping	# epicenter mapping analyses
     ├── 04.GAM			# generalised additive modelling
     ├── 05.hydra		# HYDRA clustering
-    ├── 06.stats		# data and statistical analyses 
-    └── figures 		#??? 
+    └── 06.stats		# data and statistical analyses 
+
 
 ```
 
 ### Data Availability
 
-- MS imaging data is subject to ethical restrictions and available upon reasonable request to m.barrantesepas@amsterdamumc.nl
-- Normative datasets are available: 
+- MS imaging data is subject to ethical restrictions and available upon reasonable request to m.barrantescepas@amsterdamumc.nl
+- Normative datasets were used from the EGNIMS toolbox but are available: 
 	- Human Connectome Project (HCP): https://www.humanconnectome.org/ 
 	- Allen Human Brain Atlas (AHBA): https://human.brain-map.org/
 
@@ -69,7 +70,3 @@ If you use this code or data in your research, please cite our paper:
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
----
-
-**Paper Status:** Manuscript in preparation for submission to [Journal Name]  
-**Last Updated:** February 2026

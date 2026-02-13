@@ -1,7 +1,7 @@
 ---
-title: "OrganizeData"
+title: "GAM modelling"
 author: "Giuseppe Pontillo"
-date: '2024-11'
+date: '2025-08'
 output: html_document
 ---
 
@@ -168,7 +168,6 @@ df <- merge(df, fu_time_duration_site, by = "id")
 write.csv(df, here::here("data/df_GAM.csv"), row.names = FALSE)
 ```
 
-
 ```{r GAM modelling}
 ## import and transform
 df_GAM <- read.csv(here::here("data/df_GAM.csv"), header = TRUE, sep = ",")
@@ -180,63 +179,15 @@ df_GAM$sex <- as.factor(df_GAM$sex)
 df_GAM$site <- as.factor(df_GAM$site)
 
 ## model fitting and comparison
-model_gam <- bam(atrophy_rate ~ s(atrophy_bl) + s(sc_centrality) + s(fc_centrality) + s(disc) + s(neighbourhood_atrophy_sc) + s(neighbourhood_atrophy_fc) + s(neighbourhood_atrophy_cge) + s(x,y,z) + s(age) + s(fu_time_duration) + sex + subcortical + site + s(id, bs = 're') + s(node, bs = 're') + s(atrophy_bl, node, bs = 're'), data = df_GAM, na.action = na.fail, method = "fREML", select = TRUE, discrete = FALSE,nthreads = 8)
+model_gam <- bam(atrophy_rate ~ s(atrophy_bl) + s(sc_centrality) + s(fc_centrality) + s(disc) + s(neighbourhood_atrophy_sc) + s(neighbourhood_atrophy_fc) + s(neighbourhood_atrophy_cge) + s(x,y,z) + s(age) + sex + subcortical + s(id, bs = 're') + s(node, bs = 're') + s(atrophy_bl, node, bs = 're'), data = df_GAM, na.action = na.fail, method = "fREML", select = TRUE, discrete = FALSE,nthreads = 8)
 
-model_gam_bl <- bam(atrophy_rate ~ s(atrophy_bl) + s(x,y,z) + s(age) + s(fu_time_duration) + sex + subcortical + site + s(id, bs = 're') + s(node, bs = 're') + s(atrophy_bl, node, bs = 're'), data = df_GAM, na.action = na.fail, method = "fREML", select = TRUE, discrete = FALSE, nthreads = 8)
+model_gam_bl <- bam(atrophy_rate ~ s(atrophy_bl) + s(x,y,z) + s(age) + sex + subcortical + s(id, bs = 're') + s(node, bs = 're') + s(atrophy_bl, node, bs = 're'), data = df_GAM, na.action = na.fail, method = "fREML", select = TRUE, discrete = FALSE, nthreads = 8)
 
 anova_test <- anova(model_gam_bl, model_gam, test = "LRT")
 AIC_test <- AIC(model_gam_bl, model_gam)
 
 # save
 save(model_gam, model_gam_bl, anova_test, AIC_test, file = here("data/GAM_modelling.RData"))
-
-## LOOCV
-custom_cvparts <- group_vfold_cv(df_GAM, group = id)
-
-mod_form <- as.formula(atrophy_rate ~ s(atrophy_bl) + s(sc_centrality) + s(fc_centrality) + s(disc) + s(neighbourhood_atrophy_sc) + s(neighbourhood_atrophy_fc) + s(neighbourhood_atrophy_cge) + s(x,y,z) + s(age) + s(fu_time_duration) + sex + subcortical + site + s(id, bs = 're') + s(node, bs = 're') + s(atrophy_bl, node, bs = 're')) 
-
-mod_form_bl <- as.formula(atrophy_rate ~ s(atrophy_bl) + s(x,y,z) + s(age) + s(fu_time_duration) + sex + subcortical + site + sex + subcortical + s(id, bs = 're') + s(node, bs = 're') + s(atrophy_bl, node, bs = 're')) 
-  
-holdout_results <- function(splits, ...){
-  # fit the model
-  mod <- bam(..., data = analysis(splits), na.action = na.fail, method = "fREML", select = TRUE, discrete = TRUE, nthreads = 8)
-  # apply the model and assess performance
-  holdout <- assessment(splits)
-  res <- broom::augment(mod, newdata = holdout)
-  performance <- data.frame(matrix(nrow = 1, ncol = 3))
-colnames(performance) <- c("pearsonr", "RMSE", "MAE")
-  performance$pearsonr <- cor(res$.fitted, holdout$atrophy_rate, method = "pearson")
-  performance$RMSE <- rmse(holdout$atrophy_rate, res$.fitted)
-  performance$MAE <- mae(holdout$atrophy_rate, res$.fitted)
-  output <- list(res, performance)
-  # return output
-  return(output)
-}
-
-# example <- holdout_results(custom_cvparts$splits[[1]], mod_form)
-
-LOOCV <- purrr::map(custom_cvparts$splits, holdout_results, mod_form)
-
-LOOCV_bl <- purrr::map(custom_cvparts$splits, holdout_results, mod_form_bl)
-
-# save
-save(LOOCV, LOOCV_bl, file = here("data/GAM_LOOCV.RData"))
-
-## LOOCV CVgam
-# custom_cvparts <- rep(1:565, each = 114)
-# 
-# LOOCV <- CVgam(formula = atrophy_rate ~ s(atrophy_bl) + s(sc_centrality) + s(fc_centrality) + s(disc) + s(neighbourhood_atrophy_sc) + s(neighbourhood_atrophy_fc) + s(neighbourhood_atrophy_cge) + s(x,y,z) + s(age) + sex + subcortical + s(id, bs = 're') + s(node, bs = 're') + s(atrophy_bl, node, bs = 're'), data = df_GAM, printit = TRUE, method = "GCV.Cp", cvparts = custom_cvparts, seed = 42)
-
-# LOOCV_bl <- CVgam(formula = atrophy_rate ~ s(atrophy_bl) + s(x,y,z) + s(age) + sex + subcortical + s(id, bs = 're') + s(node, bs = 're') + s(atrophy_bl, node, bs = 're'), data = df_GAM, printit = TRUE, method = "GCV.Cp", cvparts = custom_cvparts, seed = 42)
-# 
-# # save
-# save(LOOCV_bl, file = here("data/LOOCV_bl.RData"))
-
-## model selection with MuMIn
-# model_selection <- dredge(model_gam, evaluate = TRUE, fixed = ~ s(atrophy_bl) + s(x,y,z) + s(age) + sex + subcortical + s(id, bs = 're') + s(node, bs = 're') + s(node, atrophy_bl, bs = 're'))
-
-# best_model <- get.models(model_selection, 1)[[1]]
-
 ```
 
 ```{r visualize GAM models, purl = FALSE}
@@ -247,31 +198,13 @@ load(here("data/GAM_modelling.RData"))
 check_GAM <- appraise(model_gam)
 ggsave(here("data/check_GAM.png"), plot = check_GAM, dpi = 300)
 
+check_GAM_select <- appraise(model_gam_select)
+ggsave(here("data/check_GAM_select.png"), plot = check_GAM_select, dpi = 300)
+
 b <- getViz(model_gam)
 png(file=here("data/plot_GAM.png"), width = 8000, height = 8000, res = 600)
 print(plot(b, allTerms = TRUE), pages = 1) 
 dev.off()
-
-
-GAM_all <- cowplot::plot_grid(plot_GAM[[1]][[1]],plot_GAM[[1]][[2]],plot_GAM[[1]][[3]],plot_GAM[[1]][[4]],plot_GAM[[1]][[5]],plot_GAM[[1]][[6]],plot_GAM[[1]][[7]],plot_GAM[[1]][[8]],plot_GAM[[1]][[9]],plot_GAM[[1]][[10]],plot_GAM[[1]][[11]],plot_GAM[[1]][[12]],plot_GAM[[1]][[13]],plot_GAM[[1]][[14]],plot_GAM[[1]][[15]],labels="AUTO",label_size=24, nrow = 3, ncol = 5)
-ggsave(here("data/plot_GAM.png"), plot = GAM_all, height = 35, width = 21)
-plot_GAM <- draw(model_gam, residuals = TRUE)
-plot_GAM <- plot(model_gam)
-ggsave(here("data/plot_GAM.png"), plot = plot_GAM, dpi = 300)
-
-sm <- smooth_estimates(model_gam)
-
-sm |> add_confint() |> ggplot(aes(y = .estimate, x = atrophy_bl)) +
-  geom_ribbon(aes(ymin = .lower_ci, ymax = .upper_ci), alpha = 0.2, fill = "blue") +
-  geom_line(colour = "black", linewidth = 1.5) +
-  labs(y = "Partial effect", x = "Baseline atrophy", title = "Partial effect of baseline atrophy")
-
-# load data
-load(here("data/GAM_LOOCV.RData"))
-
-mean_pearsonr <- hist(unlist(lapply(lapply(LOOCV, '[[', 2), '[[', "pearsonr")))
-
-mean_rmse <- mean(unlist(lapply(lapply(LOOCV_bl, '[[', 2), '[[', "RMSE")))
 
 ```
 
