@@ -30,6 +30,8 @@
 slurm*out
 */old
 */tmp
+*/*/old
+*/*/tmp
 */colormap 
 
 # OS generated files #
