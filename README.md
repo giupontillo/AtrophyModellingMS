@@ -24,16 +24,16 @@ Clinical progression is strongly linked to grey matter atrophy in multiple scler
 
 ```
 .
-├── figures/                # Output figures and tables documentation
+├── figures/                # Figures 
 ├── LICENSE                 # License 
 ├── README.md               # This file
 └── scripts/                # Analysis scripts and models
     ├── 01.group            	# group-level analyses
-    ├── 02.indv		    	# individual-level analyses
+    ├── 02.indv		    	    # individual-level analyses
     ├── 03.epicenter-mapping	# epicenter mapping analyses
-    ├── 04.GAM			# generalised additive modelling
-    ├── 05.hydra		# HYDRA clustering
-    └── 06.stats		# data and statistical analyses 
+    ├── 04.GAM			        # generalised additive modelling
+    ├── 05.hydra		        # HYDRA clustering
+    └── 06.stats		        # data org and statistical analyses 
 
 
 ```
