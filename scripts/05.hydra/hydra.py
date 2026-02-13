@@ -1,4 +1,4 @@
-#!/home/radv/gpontillo/python-env/mlni/bin/python
+#!/usr/bin/env python3
 
 """
 Clustering based on the HYDRA method
