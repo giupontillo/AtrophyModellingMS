@@ -91,8 +91,12 @@ df_rvals = df_rvals.sample(frac=1).reset_index(drop=True)
 df_rvals = df_rvals.dropna(subset=['assignment_2'])
 
 #%%
+#check missing subjects subcortical disc 
+df_subcortical = df_rvals[df_rvals['category'] == 'structural subcortical disconnectome']
+
+#%%
 #save dataframe
-df_rvals.to_csv(f"{indvdir}/2025.06.23_all_indv_rvals.csv", index=False)
+df_rvals.to_csv(f"{indvdir}/2025.08.21_all_indv_rvals.csv", index=False)
 
 #%%
 

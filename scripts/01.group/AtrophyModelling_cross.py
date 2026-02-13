@@ -158,10 +158,10 @@ def nodal_stress(fc_ctx_dc, fc_sctx_dc, sc_ctx_dc, sc_sctx_dc, atrophy, parcella
     sc_sctx_r = np.corrcoef(sc_sctx_dc, atrophy_sctx)[0,1]  
 
     #store correlation coefficients 
-    rvals = {'functional cortical hubs': fc_ctx_r, 
-             'functional subcortical hubs': fc_sctx_r,
-             'structural cortical hubs': sc_ctx_r, 
-             'structural subcortical hubs': sc_sctx_r}
+    rvals = {'functional cortico-cortical degree centrality': fc_ctx_r, 
+             'functional subcortico-cortical degree centrality': fc_sctx_r,
+             'structural cortico-cortical degree centrality': sc_ctx_r, 
+             'structural subcortico-cortical degree centrality': sc_sctx_r}
     
     ################# premutation testing ################# 
     fc_ctx_p, fc_ctx_d = spin_test(fc_ctx_dc, atrophy_ctx, 
@@ -178,16 +178,16 @@ def nodal_stress(fc_ctx_dc, fc_sctx_dc, sc_ctx_dc, sc_sctx_dc, atrophy, parcella
                                      type='pearson', null_dist=True)
 
     # Store p-values and null distributions
-    p_and_d = {'functional cortical hubs': [fc_ctx_p, fc_ctx_d], 
-               'functional subcortical hubs': [fc_sctx_p, fc_sctx_d],
-               'structural cortical hubs': [sc_ctx_p, sc_ctx_d], 
-               'structural subcortical hubs': [sc_sctx_p, sc_sctx_d]}
+    p_and_d = {'functional cortico-cortical degree centrality': [fc_ctx_p, fc_ctx_d], 
+               'functional subcortico-cortical degree centrality': [fc_sctx_p, fc_sctx_d],
+               'structural cortico-cortical degree centrality': [sc_ctx_p, sc_ctx_d], 
+               'structural subcortico-cortical degree centrality': [sc_sctx_p, sc_sctx_d]}
     
     # Store meas
-    meas = {('functional cortical hubs', "cortical atrophy (cohen's d)"): [fc_ctx_dc, atrophy_ctx],
-            ('functional subcortical hubs', "subcortical atrophy (cohen's d)"): [fc_sctx_dc, atrophy_sctx],
-            ('structural cortical hubs', "cortical atrophy (cohen's d)"): [sc_ctx_dc, atrophy_ctx],
-            ('structural subcortical hubs', "subcortical atrophy (cohen's d)"): [sc_sctx_dc, atrophy_sctx]}
+    meas = {('functional cortico-cortical degree centrality', "cortical atrophy (cohen's d)"): [fc_ctx_dc, atrophy_ctx],
+            ('functional subcortico-cortical degree centrality', "subcortical atrophy (cohen's d)"): [fc_sctx_dc, atrophy_sctx],
+            ('structural cortico-cortical degree centrality', "cortical atrophy (cohen's d)"): [sc_ctx_dc, atrophy_ctx],
+            ('structural subcortico-cortical degree centrality', "subcortical atrophy (cohen's d)"): [sc_sctx_dc, atrophy_sctx]}
     
     return rvals, p_and_d, meas
 
@@ -207,10 +207,10 @@ def neighbour_atrophy(fc_ctx_ngh, fc_sctx_ngh, sc_ctx_ngh, sc_sctx_ngh, atrophy,
     sc_sctx_r = np.corrcoef(sc_sctx_ngh, atrophy_sctx)[0,1]  
 
     #store correlation coefficients 
-    rvals = {'functional cortical neighbour atrophy': fc_ctx_r, 
-             'functional subcortical neighbour atrophy': fc_sctx_r,
-             'structural cortical neighbour atrophy': sc_ctx_r, 
-             'structural subcortical neighbour atrophy': sc_sctx_r}
+    rvals = {'functional cortico-cortical neighbour atrophy': fc_ctx_r, 
+             'functional subcortico-cortical neighbour atrophy': fc_sctx_r,
+             'structural cortico-cortical neighbour atrophy': sc_ctx_r, 
+             'structural subcortico-cortical neighbour atrophy': sc_sctx_r}
     
     ################# premutation testing ################# 
     fc_ctx_p, fc_ctx_d = spin_test(fc_ctx_ngh, atrophy_ctx, 
@@ -227,15 +227,15 @@ def neighbour_atrophy(fc_ctx_ngh, fc_sctx_ngh, sc_ctx_ngh, sc_sctx_ngh, atrophy,
                                      type='pearson', null_dist=True)
 
     # Store p-values and null distributions
-    p_and_d = {'functional cortical neighbour atrophy': [fc_ctx_p, fc_ctx_d], 
-               'functional subcortical neighbour atrophy': [fc_sctx_p, fc_sctx_d],
-               'structural cortical neighbour atrophy': [sc_ctx_p, sc_ctx_d], 
-               'structural subcortical neighbour atrophy': [sc_sctx_p, sc_sctx_d]}
+    p_and_d = {'functional cortico-cortical neighbour atrophy': [fc_ctx_p, fc_ctx_d], 
+               'functional subcortico-cortical neighbour atrophy': [fc_sctx_p, fc_sctx_d],
+               'structural cortico-cortical neighbour atrophy': [sc_ctx_p, sc_ctx_d], 
+               'structural subcortico-cortical neighbour atrophy': [sc_sctx_p, sc_sctx_d]}
     
-    meas = {('functional cortical neighbour atrophy', "cortical atrophy (cohen's d)"): [fc_ctx_ngh, atrophy_ctx],
-            ('functional subcortical neighbour atrophy', "subcortical atrophy (cohen's d)"): [fc_sctx_ngh, atrophy_sctx],
-            ('structural cortical neighbour atrophy', "cortical atrophy (cohen's d)"): [sc_ctx_ngh, atrophy_ctx],
-            ('structural subcortical neighbour atrophy', "subcortical atrophy (cohen's d)"): [sc_sctx_ngh, atrophy_sctx]}
+    meas = {('functional cortico-cortical neighbour atrophy', "cortical atrophy (cohen's d)"): [fc_ctx_ngh, atrophy_ctx],
+            ('functional subcortico-cortical neighbour atrophy', "subcortical atrophy (cohen's d)"): [fc_sctx_ngh, atrophy_sctx],
+            ('structural cortico-cortical neighbour atrophy', "cortical atrophy (cohen's d)"): [sc_ctx_ngh, atrophy_ctx],
+            ('structural subcortico-cortical neighbour atrophy', "subcortical atrophy (cohen's d)"): [sc_sctx_ngh, atrophy_sctx]}
     
     return rvals, p_and_d, meas
 
@@ -250,9 +250,9 @@ def axonal_disc(sc_ctx_dc, sc_sctx_dc, atrophy, parcellation):
     sc_sctx_r = np.corrcoef(sc_sctx_dc, atrophy_sctx)[0,1]  
 
     #store correlation coefficients 
-    rvals = {'structural cortical disconnectome': sc_ctx_r, 
-             'structural subcortical disconnectome': sc_sctx_r}
-    
+    rvals = {'structural cortico-cortical disconnection': sc_ctx_r, 
+             'structural subcortico-cortical disconnection': sc_sctx_r}
+
     ################# premutation testing ################# 
     sc_ctx_p, sc_ctx_d = spin_test(sc_ctx_dc, atrophy_ctx, 
                                    surface_name='fsa5', parcellation_name=parcellation,
@@ -263,11 +263,11 @@ def axonal_disc(sc_ctx_dc, sc_sctx_dc, atrophy, parcellation):
                                      type='pearson', null_dist=True)
 
     # Store p-values and null distributions
-    p_and_d = {'structural cortical disconnectome': [sc_ctx_p, sc_ctx_d], 
-               'structural subcortical disconnectome': [sc_sctx_p, sc_sctx_d]}
+    p_and_d = {'structural cortico-cortical disconnection': [sc_ctx_p, sc_ctx_d], 
+               'structural subcortico-cortical disconnection': [sc_sctx_p, sc_sctx_d]}
     
-    meas = {('structural cortical disconnectome', "cortical atrophy (cohen's d)"): [sc_ctx_dc, atrophy_ctx],
-            ('structural subcortical disconnectome', "subcortical atrophy (cohen's d)"): [sc_sctx_dc, atrophy_sctx]}
+    meas = {('structural cortico-cortical disconnection', "cortical atrophy (cohen's d)"): [sc_ctx_dc, atrophy_ctx],
+           ('structural subcortico-cortical disconnection', "subcortical atrophy (cohen's d)"): [sc_sctx_dc, atrophy_sctx]}
     
     
     return rvals, p_and_d, meas
@@ -286,8 +286,8 @@ def transcriptomic_vulnerablity(cge_ctx, cge_sctx, atrophy, parcellation):
     cge_sctx_r = np.corrcoef(cge_sctx, atrophy_sctx)[0,1]   
 
     #store correlation coefficients 
-    rvals = {'cortical gene expression': cge_ctx_r, 
-             'subcortical gene expression': cge_sctx_r}
+    rvals = {'cortico-cortical transcriptomic neighbour atrophy': cge_ctx_r, 
+             'subcortico-cortical transcriptomic neighbour atrophy': cge_sctx_r}
     
     ################# premutation testing ################# 
     fc_ctx_p, fc_ctx_d = spin_test(cge_ctx, atrophy_ctx, 
@@ -299,12 +299,12 @@ def transcriptomic_vulnerablity(cge_ctx, cge_sctx, atrophy, parcellation):
                                      type='pearson', null_dist=True)
 
     # Store p-values and null distributions
-    p_and_d = {'cortical gene expression': [fc_ctx_p, fc_ctx_d], 
-               'subcortical gene expression': [fc_sctx_p, fc_sctx_d]}
+    p_and_d = {'cortico-cortical transcriptomic neighbour atrophy': [fc_ctx_p, fc_ctx_d], 
+               'subcortico-cortical transcriptomic neighbour atrophy': [fc_sctx_p, fc_sctx_d]}
     
-    meas = {('cortical gene expression', "cortical atrophy (cohen's d)"): [cge_ctx, atrophy_ctx],
-            ('subcortical gene expression', "subcortical atrophy (cohen's d)"): [cge_sctx, atrophy_sctx]}
-        
+    meas = {('cortico-cortical transcriptomic neighbour atrophy', "cortical atrophy (cohen's d)"): [cge_ctx, atrophy_ctx],
+            ('subcortico-cortical transcriptomic neighbour atrophy', "subcortical atrophy (cohen's d)"): [cge_sctx, atrophy_sctx]}
+    
     return rvals, p_and_d, meas
 
 def plot_null_distributions(p_and_d, rvals, filename): 
@@ -332,7 +332,7 @@ def plot_null_distributions(p_and_d, rvals, filename):
     plt.show()
 
 def plot_hubs_vs_atrophy(p_and_d, rvals, meas, filename):
-    fig, axs = plt.subplots(1, 4, figsize=(15, 3))
+    fig, axs = plt.subplots(1, 4, figsize=(17, 4))
     
     for k, (fn, dd) in enumerate(meas.items()):
         # Define scatter colors
@@ -456,7 +456,7 @@ cge_group_400_sctx = pd.read_csv(f"{neighdir}/neighbourhood_atrophy_cross_Schaef
 #==============================================================================
 # PLOT DATA 
 #==============================================================================
-output_folder = f"{dir}/output/june/cross_group_results"
+output_folder = f"{dir}/output/oct/cross_group_results"
 os.makedirs(output_folder, exist_ok=True)
 
 # ################# ATROPHY CROSS DATA FROM AMSTERDAM ################# 
@@ -540,11 +540,11 @@ plot_subcortical_atrophy(neighcross_group_400_sc_sctx, output_folder, "neighcros
 
 disc_ctx_dc_100, disc_ctx_dc_400, disc_sctx_dc_100, disc_sctx_dc_400 = compute_dc(disc_group_100_ctx, disc_group_400_ctx, disc_group_100_sctx, disc_group_400_sctx)
 
-plot_cortical_atrophy(disc_ctx_dc_100, "schaefer_100_fsa5", output_folder, "disc_group_100_ctx_map", color_range=(0,2600), cmap="Blues")
-plot_cortical_atrophy(disc_ctx_dc_400, "schaefer_400_fsa5", output_folder, "disc_group_400_ctx_map", color_range=(0,2600), cmap="Blues")
+plot_cortical_atrophy(disc_ctx_dc_100, "schaefer_100_fsa5", output_folder, "disc_group_100_ctx_map", color_range=(0,1600), cmap="Reds")
+plot_cortical_atrophy(disc_ctx_dc_400, "schaefer_400_fsa5", output_folder, "disc_group_400_ctx_map", color_range=(0,1600), cmap="Reds")
 
-plot_subcortical_atrophy(disc_sctx_dc_100, output_folder, "disc_group_100_sctx_map", color_range=(0,1200), cmap="Blues")
-plot_subcortical_atrophy(disc_sctx_dc_400, output_folder, "disc_group_400_sctx_map", color_range=(0,1200), cmap="Blues")
+plot_subcortical_atrophy(disc_sctx_dc_100, output_folder, "disc_group_100_sctx_map", color_range=(0,1200), cmap="Reds")
+plot_subcortical_atrophy(disc_sctx_dc_400, output_folder, "disc_group_400_sctx_map", color_range=(0,1200), cmap="Reds")
 
 #%%
 

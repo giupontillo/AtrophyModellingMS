@@ -1,1 +1,75 @@
-Collection of code for MRI processing
+# The Role of Network Connectivity and Transcriptomic Vulnerability in Shaping Grey Matter Atrophy in Multiple Sclerosis
+
+[![Paper Status](https://img.shields.io/badge/Paper-Under%20Review-yellow)]() 
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)]()
+
+This repository contains the code associated with our research paper to reproduce the results presented in the manuscript: 
+
+**The Role of Network Connectivity and Transcriptomic Vulnerability in Shaping Grey Matter Atrophy in Multiple Sclerosis.** 
+
+**Authors:** Mar Barrantes-Cepas, Mario Tranfa, David R. van Nederpelt, Ismail Koubiyr, Luigi Lorenzini, Birgit Helmlinger, Stefan Ropele, Daniela Pinter, Christian Enzinger, Tomas Uher, Manuela Vaneckova, Joep Killestein, Eva M.M. Strijbis, Martijn D. Steenwijk, Hugo Vrenken, Frederik Barkhof, Menno M. Schoonheim†, Giuseppe Pontillo†
+
+**Correspondence:** M. Barrantes-Cepas, m.barrantescepas@amsterdamumc.nl
+† These authors contributed equally to this work. 
+
+## Abstract
+
+Clinical progression is strongly linked to grey matter atrophy in multiple sclerosis (MS), detectable early on MRI and progressing non-randomly across the brain. However, the mechanisms driving its spatio-temporal progression and individual variability remain unclear. Using MRIs from 2,187 participants, alongside normative data, we systematically investigated network-based mechanisms underlying MS-related atrophy. Regional atrophy colocalised with functional cortical hubs, supporting the *nodal stress* hypothesis, and propagated along anatomical and functional connections, consistent with *transneuronal degeneration*. *Lesional disconnection* and *transcriptomic vulnerability* played marginal roles. Patient- and subgroup-level analyses revealed that network-based mechanisms are specifically linked to MS-related neurodegeneration and may operate differently in distinct subtypes or disease phases. Atrophy patterns were anchored to the connectivity profiles of disease epicentres involving the visual, sensorimotor, and temporal cortices, and the hippocampi and thalami. Network-based measures enhanced the prediction of future atrophy progression in individual with MS, providing a mechanistic framework to understand neurodegeneration in MS.
+
+## Repository Structure
+
+```
+.
+├── results/                # Output figures and tables documentation
+├── LICENSE                 # License 
+├── README.md               # This file
+└── scripts/                # Analysis scripts and models
+    ├── 01.group            	# group-level analyses
+    ├── 02.indv		    	# individual-level analyses
+    ├── 03.epicenter-mapping	# epicenter mapping analyses
+    ├── 04.GAM			# generalised additive modelling
+    ├── 05.hydra		# HYDRA clustering
+    ├── 06.stats		# data and statistical analyses 
+    └── figures 		#??? 
+
+```
+
+### Data Availability
+
+- MS imaging data is subject to ethical restrictions and available upon reasonable request to m.barrantesepas@amsterdamumc.nl
+- Normative datasets are available: 
+	- Human Connectome Project (HCP): https://www.humanconnectome.org/ 
+	- Allen Human Brain Atlas (AHBA): https://human.brain-map.org/
+
+## Requirements
+
+- Python >= 3.8
+- R >= 4.1.1
+- ENIGMA Toolbox: https://enigma-toolbox.readthedocs.io/en/latest/ 
+S. Lariviere et al., Network-based atrophy modeling in the common epilepsies: A worldwide ENIGMA study. Sci Adv 6,  (2020).
+
+
+## Citation
+
+If you use this code or data in your research, please cite our paper:
+
+```bibtex
+@article{YourName2026,
+  title={TITLE},
+  author={[Author 1] and [Author 2] and [Author 3]},
+  journal={[Journal Name]},
+  year={2026},
+  note={Under Review}
+}
+```
+
+**Note:** This citation format will be updated once the paper is published.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+
+**Paper Status:** Manuscript in preparation for submission to [Journal Name]  
+**Last Updated:** February 2026

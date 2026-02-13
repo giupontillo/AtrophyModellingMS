@@ -382,6 +382,14 @@ fc_ctx_dc_400, sc_ctx_dc_400, fc_sctx_dc_400, sc_sctx_dc_400 = compute_dc(fc_ctx
 dir = "/data/anw/knw-work/g.pontillo/predictive_modelling/code/stats/AtrophyModelling"
 atrophycross_dir = f'{dir}/data/atrophy_cross'
 
+###data hydra 1 
+atrophy_cross_group1_100_fdr = pd.read_csv(f"{atrophycross_dir}/atrophy_baseline_SchaeferSubcortex114Parcels_group1_pfdr.csv")
+atrophy_cross_group1_400_fdr = pd.read_csv(f"{atrophycross_dir}/atrophy_baseline_SchaeferSubcortex414Parcels_group1_pfdr.csv")
+
+atrophy_cross_group1_100 = pd.read_csv(f"{atrophycross_dir}/atrophy_baseline_SchaeferSubcortex114Parcels_group1_cohend.csv")
+atrophy_cross_group1_400 = pd.read_csv(f"{atrophycross_dir}/atrophy_baseline_SchaeferSubcortex414Parcels_group1_cohend.csv")
+
+### data hydra 2 
 atrophy_cross_group2_100_fdr = pd.read_csv(f"{atrophycross_dir}/atrophy_baseline_SchaeferSubcortex114Parcels_group2_pfdr.csv")
 atrophy_cross_group2_400_fdr = pd.read_csv(f"{atrophycross_dir}/atrophy_baseline_SchaeferSubcortex414Parcels_group2_pfdr.csv")
 
@@ -456,37 +464,79 @@ cge_group_400_sctx = pd.read_csv(f"{neighdir}/neighbourhood_atrophy_cross_Schaef
 #==============================================================================
 # PLOT DATA 
 #==============================================================================
-output_folder = f"{dir}/output/june/cross_group2_results"
-os.makedirs(output_folder, exist_ok=True)
+output_folder1 = f"{dir}/output/oct/cross_group1_results"
+output_folder2 = f"{dir}/output/oct/cross_group2_results"
+os.makedirs(output_folder1, exist_ok=True)
+os.makedirs(output_folder2, exist_ok=True)
 
-# ################# ATROPHY CROSS DATA FROM AMSTERDAM ################# 
-atrophy_d100_ctx = atrophy_cross_group2_100.iloc[:,:-14].to_numpy() #remove sctx
-atrophy_d400_ctx = atrophy_cross_group2_400.iloc[:,:-14].to_numpy() #remove sctx
+# ################# ATROPHY CROSS HYDRA 1 ################# 
+atrophy1_d100_ctx = atrophy_cross_group1_100.iloc[:,:-14].to_numpy() #remove sctx
+atrophy1_d400_ctx = atrophy_cross_group1_400.iloc[:,:-14].to_numpy() #remove sctx
 
-atrophy_d100_sctx = atrophy_cross_group2_100.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
-atrophy_d400_sctx = atrophy_cross_group2_100.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
+atrophy1_d100_sctx = atrophy_cross_group1_100.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
+atrophy1_d400_sctx = atrophy_cross_group1_100.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
+
+# ################# ATROPHY CROSS HYDRA 2 ################# 
+atrophy2_d100_ctx = atrophy_cross_group2_100.iloc[:,:-14].to_numpy() #remove sctx
+atrophy2_d400_ctx = atrophy_cross_group2_400.iloc[:,:-14].to_numpy() #remove sctx
+
+atrophy2_d100_sctx = atrophy_cross_group2_100.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
+atrophy2_d400_sctx = atrophy_cross_group2_100.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
 
 #%%
-plot_cortical_atrophy(atrophy_d100_ctx, "schaefer_100_fsa5", output_folder, "atrophy_cross_group2_100_ctx_map", color_range=(-0.8,0.8), cmap="RdBu_r")
-plot_cortical_atrophy(atrophy_d400_ctx, "schaefer_400_fsa5", output_folder, "atrophy_cross_group2_400_ctx_map", color_range=(-0.8,0.8), cmap="RdBu_r")
+# ################# ATROPHY CROSS HYDRA 1 ################# 
+plot_cortical_atrophy(atrophy1_d100_ctx, "schaefer_100_fsa5", output_folder1, "atrophy_cross_group1_100_ctx_map", color_range=(-0.8,0.8), cmap="RdBu_r")
+plot_cortical_atrophy(atrophy1_d400_ctx, "schaefer_400_fsa5", output_folder1, "atrophy_cross_group1_400_ctx_map", color_range=(-0.8,0.8), cmap="RdBu_r")
  
-plot_subcortical_atrophy(atrophy_d100_sctx, output_folder, "atrophy_cross_group2_100_sctx_map", color_range=(-0.8, 0.8), cmap="RdBu_r")
-plot_subcortical_atrophy(atrophy_d400_sctx, output_folder, "atrophy_cross_group2_400_sctx_map", color_range=(-0.8, 0.8), cmap="RdBu_r")
+plot_subcortical_atrophy(atrophy1_d100_sctx, output_folder1, "atrophy_cross_group1_100_sctx_map", color_range=(-0.8, 0.8), cmap="RdBu_r")
+plot_subcortical_atrophy(atrophy1_d400_sctx, output_folder1, "atrophy_cross_group1_400_sctx_map", color_range=(-0.8, 0.8), cmap="RdBu_r")
+
+# ################# ATROPHY CROSS HYDRA 2 ################# 
+plot_cortical_atrophy(atrophy2_d100_ctx, "schaefer_100_fsa5", output_folder2, "atrophy_cross_group2_100_ctx_map", color_range=(-0.8,0.8), cmap="RdBu_r")
+plot_cortical_atrophy(atrophy2_d400_ctx, "schaefer_400_fsa5", output_folder2, "atrophy_cross_group2_400_ctx_map", color_range=(-0.8,0.8), cmap="RdBu_r")
+ 
+plot_subcortical_atrophy(atrophy2_d100_sctx, output_folder2, "atrophy_cross_group2_100_sctx_map", color_range=(-0.8, 0.8), cmap="RdBu_r")
+plot_subcortical_atrophy(atrophy2_d400_sctx, output_folder2, "atrophy_cross_group2_400_sctx_map", color_range=(-0.8, 0.8), cmap="RdBu_r")
 
 #%%
 
-# ################# ATROPHY CROSS DATA FROM AMSTERDAM ################# 
-atrophy_pfdr100_ctx = atrophy_cross_group2_100_fdr.iloc[:,:-14].to_numpy() #remove sctx
-atrophy_pfdr400_ctx = atrophy_cross_group2_400_fdr.iloc[:,:-14].to_numpy() #remove sctx
+# ################# FDR HYDRA 1 ################# 
+atrophy1_pfdr100_ctx = atrophy_cross_group1_100_fdr.iloc[:,:-14].to_numpy() #remove sctx
+atrophy1_pfdr400_ctx = atrophy_cross_group1_400_fdr.iloc[:,:-14].to_numpy() #remove sctx
 
-atrophy_pfdr100_sctx = atrophy_cross_group2_100_fdr.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
-atrophy_pfdr400_sctx = atrophy_cross_group2_400_fdr.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
+atrophy1_pfdr100_sctx = atrophy_cross_group1_100_fdr.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
+atrophy1_pfdr400_sctx = atrophy_cross_group1_400_fdr.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
 
-plot_cortical_atrophy(atrophy_pfdr100_ctx, "schaefer_100_fsa5", output_folder, "atrophy_cross_group2_100_ctx_pfdr_map", color_range=(0,0.05), cmap="Reds")
-plot_cortical_atrophy(atrophy_pfdr400_ctx, "schaefer_400_fsa5", output_folder, "atrophy_cross_group2_400_ctx_pfdr_map", color_range=(0,0.05), cmap="Reds")
+log_atrophy1_pfdr100_ctx = -np.log(atrophy1_pfdr100_ctx)
+log_atrophy1_pfdr400_ctx = -np.log(atrophy1_pfdr400_ctx)
+
+log_atrophy1_pfdr100_sctx = -np.log(atrophy1_pfdr100_sctx)
+log_atrophy1_pfdr400_sctx = -np.log(atrophy1_pfdr400_sctx)
+
+plot_cortical_atrophy(log_atrophy1_pfdr100_ctx, "schaefer_100_fsa5", output_folder1, "atrophy_cross_group1_100_ctx_pfdr_map", color_range=(1.3,40), cmap="Reds")
+plot_cortical_atrophy(log_atrophy1_pfdr400_ctx, "schaefer_400_fsa5", output_folder1, "atrophy_cross_group1_400_ctx_pfdr_map", color_range=(1.3,20), cmap="Reds")
  
-plot_subcortical_atrophy(atrophy_pfdr100_sctx, output_folder, "atrophy_cross_group2_100_sctx_pfdr_map", color_range=(0, 0.05), cmap="Reds")
-plot_subcortical_atrophy(atrophy_pfdr400_sctx, output_folder, "atrophy_cross_group2_400_sctx_pfdr_map", color_range=(0, 0.05), cmap="Reds")
+plot_subcortical_atrophy(log_atrophy1_pfdr100_sctx, output_folder1, "atrophy_cross_group1_100_sctx_pfdr_map", color_range=(1.3,40), cmap="Reds")
+plot_subcortical_atrophy(log_atrophy1_pfdr400_sctx, output_folder1, "atrophy_cross_group1_400_sctx_pfdr_map", color_range=(1.3,20), cmap="Reds")
+
+# ################# FDR HYDRA 2 ################# 
+atrophy2_pfdr100_ctx = atrophy_cross_group2_100_fdr.iloc[:,:-14].to_numpy() #remove sctx
+atrophy2_pfdr400_ctx = atrophy_cross_group2_400_fdr.iloc[:,:-14].to_numpy() #remove sctx
+
+atrophy2_pfdr100_sctx = atrophy_cross_group2_100_fdr.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
+atrophy2_pfdr400_sctx = atrophy_cross_group2_400_fdr.iloc[:,-14:].to_numpy().T.squeeze()  #remove cortical 
+
+log_atrophy2_pfdr100_ctx = -np.log(atrophy2_pfdr100_ctx)
+log_atrophy2_pfdr400_ctx = -np.log(atrophy2_pfdr400_ctx)
+
+log_atrophy2_pfdr100_sctx = -np.log(atrophy2_pfdr100_sctx)
+log_atrophy2_pfdr400_sctx = -np.log(atrophy2_pfdr400_sctx)
+
+plot_cortical_atrophy(log_atrophy2_pfdr100_ctx, "schaefer_100_fsa5", output_folder2, "atrophy_cross_group2_100_ctx_pfdr_map", color_range=(1.3,40), cmap="Reds")
+plot_cortical_atrophy(log_atrophy2_pfdr400_ctx, "schaefer_400_fsa5", output_folder2, "atrophy_cross_group2_400_ctx_pfdr_map", color_range=(1.3,20), cmap="Reds")
+ 
+plot_subcortical_atrophy(log_atrophy2_pfdr100_sctx, output_folder2, "atrophy_cross_group2_100_sctx_pfdr_map", color_range=(1.3,40), cmap="Reds")
+plot_subcortical_atrophy(log_atrophy2_pfdr400_sctx, output_folder2, "atrophy_cross_group2_400_sctx_pfdr_map", color_range=(1.3,20), cmap="Reds")
 
 
 #%%

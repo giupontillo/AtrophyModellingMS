@@ -28,6 +28,9 @@
 *.out
 */slurm*out
 slurm*out
+*/old
+*/tmp
+*/colormap 
 
 # OS generated files #
 ######################
@@ -46,6 +49,10 @@ repos/
 
 # data and output #
 #########
+*.csv
+*.tsv
+*.Rds
+*.png
 data/
 output/
 
@@ -53,3 +60,5 @@ output/
 #########
 renv/
 renv.lock
+.Rhistory
+*.Rproj

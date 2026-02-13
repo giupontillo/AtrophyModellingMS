@@ -170,64 +170,35 @@ def nodal_stress(fc_ctx_dc, fc_sctx_dc, sc_ctx_dc, sc_sctx_dc, atrophy, parcella
 # IMPORT DATA 
 #==============================================================================
 
-# ################# NORMATIVE DATA HUMAN CONNECTOME PROJECT ################# 
-#sc_ctx_100, sc_ctx_labels_100, sc_sctx_100, sc_sctx_labels_100 = load_sc(parcellation="schaefer_100") 
-#fc_ctx_100, fc_ctx_labels_100, fc_sctx_100, fc_sctx_labels_100 = load_fc(parcellation="schaefer_100") 
-sc_ctx_400, sc_ctx_labels_400, sc_sctx_400, sc_sctx_labels_400 = load_sc(parcellation="schaefer_400") 
-fc_ctx_400, fc_ctx_labels_400, fc_sctx_400, fc_sctx_labels_400 = load_fc(parcellation="schaefer_400") 
-
-# structural subcortical are [14,X14], remove 14 subcortical regions 
-#sc_sctx_100 = sc_sctx_100[:,:-14]
-sc_sctx_400 = sc_sctx_400[:,:-14]
-
-# ################# ATROPHY DATA ################# 
-dir = "/data/anw/knw-work/g.pontillo/predictive_modelling/code/stats/AtrophyModelling"
-atrophydir = f'{dir}/data/atrophy_cross'
-
-#atrophy_long_indv_100 = pd.read_csv(f"{atrophydir}/atrophy_baseline_SchaeferSubcortex114Parcels_individuals_wscore.csv", index_col="id")
-atrophy_long_indv_400 = pd.read_csv(f"{atrophydir}/atrophy_baseline_SchaeferSubcortex414Parcels_individuals_wscore.csv", index_col="id")
-
-#%%
-
 # ################# OUTPUT DIRECTORY ################# 
 outdir="/data/anw/knw-work/g.pontillo/predictive_modelling/code/stats/AtrophyModelling/output/oct/cross_indv_results"
+
+# ################# NORMATIVE DATA HUMAN CONNECTOME PROJECT ################# 
+sc_ctx_400, sc_ctx_labels_400, sc_sctx_400, sc_sctx_labels_400 = load_sc(parcellation="schaefer_400") 
+fc_ctx_400, fc_ctx_labels_400, fc_sctx_400, fc_sctx_labels_400 = load_fc(parcellation="schaefer_400") 
+sc_sctx_400 = sc_sctx_400[:,:-14] # structural subcortical are [14,X14], remove 14 subcortical regions 
+fc_ctx_dc_400, sc_ctx_dc_400, fc_sctx_dc_400, sc_sctx_dc_400 = compute_dc(fc_ctx_400, sc_ctx_400, fc_sctx_400, sc_sctx_400)
+
+
+# ################# ATROPHY DATA ################# 
+#TODO: this will change as now we'll do it per patient 
+parser = argparse.ArgumentParser()
+parser.add_argument('--row', required=True, help='Full CSV row')
+args = parser.parse_args()
+
+subject = sys.argv[1]
+atrophy_str = sys.argv[2]
+
+#dir = "/data/anw/knw-work/g.pontillo/predictive_modelling/code/stats/AtrophyModelling"
+#atrophydir = f'{dir}/data/atrophy_cross'
+#atrophy_long_indv_400 = pd.read_csv(f"{atrophydir}/atrophy_baseline_SchaeferSubcortex414Parcels_individuals_wscore.csv", index_col="id")
+
 
 #%%
 
 #==============================================================================
 # NODAL STRESS (atrophy & centrality maps (functional/structural))
 #==============================================================================
-#----------------------------------------------------------------------
-# compute degree centrality
-#----------------------------------------------------------------------
-#normative enigma data
-#fc_ctx_dc_100, sc_ctx_dc_100, fc_sctx_dc_100, sc_sctx_dc_100 = compute_dc(fc_ctx_100, sc_ctx_100, fc_sctx_100, sc_sctx_100)
-fc_ctx_dc_400, sc_ctx_dc_400, fc_sctx_dc_400, sc_sctx_dc_400 = compute_dc(fc_ctx_400, sc_ctx_400, fc_sctx_400, sc_sctx_400)
-
-#%%
-#----------------------------------------------------------------------
-# compute nodal stress
-#----------------------------------------------------------------------
-
-################# INDV ATROPHY  DATA FROM AMSTERDAM ################# 
-# nodal_stress_d100={}
-
-# for indv, row in atrophy_long_indv_100.iterrows():
-    
-#     print(indv)
-#     row = row.to_frame().T 
-#     rvals, p_and_d = nodal_stress(fc_ctx_dc_100, fc_sctx_dc_100, sc_ctx_dc_100, sc_sctx_dc_100, row, "schaefer_100")
-#     nodal_stress_d100[indv] = {'rvals': rvals, 'p_and_d': p_and_d}
-
-#     print(f"{indv} done!")
-    
-# #%%
-# #save data in a dictionary
-# print("saving nodal stress schaefer 100")
-# nodal_stress_d100_df =  pd.DataFrame(nodal_stress_d100.items()) 
-# np.save(f'{outdir}/2025-06-18_nodal-stress-indv_Schaefer100_rot-10000.npy', nodal_stress_d100) 
-    
-#%%
 nodal_stress_d400={}
 
 for indv, row in atrophy_long_indv_400.iterrows():

@@ -1131,15 +1131,19 @@ write.table(feature_tsv, here::here("data/feature_SchaeferSubcortex414Parcels.ts
 ```{r explore clusters}
 df_baseline <- readRDS(here::here("data/df_baseline.Rds"))
 ## SchaeferSubcortex 114 parcels
-hydra_labels <- read.csv(here::here("output/hydra_SchaeferSubcortex114Parcels/clustering/clustering_assignment.tsv"), sep = "\t")
+hydra_labels <- read.csv(here::here("output/old/output/hydra_SchaeferSubcortex114Parcels/clustering/clustering_assignment.tsv"), sep = "\t")
 hydra_labels$assignment_2 <- factor(hydra_labels$assignment_2, levels = c("-1", "1", "2"))
-hydra_ARI <- as.data.frame(t(read.csv(here::here("output/hydra_SchaeferSubcortex114Parcels/clustering/adjusted_rand_index.tsv"), sep = "\t", header = FALSE)))
+hydra_ARI <- as.data.frame(t(read.csv(here::here("output/old/output/hydra_SchaeferSubcortex114Parcels/clustering/adjusted_rand_index.tsv"), sep = "\t", header = FALSE)))
 colnames(hydra_ARI) <- c("N_subtypes", "ARI")
+hydra_ARI$N_subtypes <- c("1", "2", "3", "4", "5")
 hydra_ARI$ARI <- as.numeric(hydra_ARI$ARI)
-ggplot(data=hydra_ARI, aes(x=N_subtypes, y=ARI, group=1)) +
-  geom_line()+
-  geom_point()+
-  ylim(0,0.8)
+ARI_plot <- ggplot(data=hydra_ARI, aes(x=N_subtypes, y=ARI, group=1)) +
+  geom_line(color="black", linetype = "solid") +
+  geom_point(shape=19, color="black") +
+  ylim(0,0.8) +
+  labs(title = "HYDRA", x = "k", y = "ARI") +
+  theme_minimal(base_size = 18)
+ggsave(here("data/ARI_plot.png"), plot = ARI_plot, dpi = 300)
 # write optimal clustering
 hydra_labels_2subtypes <- hydra_labels[, c("participant_id", "session_id", "diagnosis", "assignment_2")]
 write.csv(hydra_labels_2subtypes, here::here("data/hydra_SchaeferSubcortex114Parcels_2subtypes.csv"), row.names = FALSE)
