@@ -47,9 +47,10 @@ Clinical progression is strongly linked to grey matter atrophy in multiple scler
 
 ## Requirements
 
+- ENIGMA Toolbox (S. Lariviere et *al.*): https://enigma-toolbox.readthedocs.io/en/latest/ 
 - Python >= 3.8
 - R >= 4.1.1
-- ENIGMA Toolbox (S. Lariviere et *al.*): https://enigma-toolbox.readthedocs.io/en/latest/ 
+
 
 ## Bibliography
 
