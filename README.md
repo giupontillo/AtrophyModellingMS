@@ -41,22 +41,23 @@ Clinical progression is strongly linked to grey matter atrophy in multiple scler
 ### Data Availability
 
 - MS imaging data is subject to ethical restrictions and available upon reasonable request to m.barrantescepas@amsterdamumc.nl
-- Normative datasets were used from the EGNIMS toolbox but are available: 
+- Normative datasets were used from the ENIGMA toolbox but are available: 
 	- Human Connectome Project (HCP): https://www.humanconnectome.org/ 
 	- Allen Human Brain Atlas (AHBA): https://human.brain-map.org/
 
 ## Requirements
 
-- ENIGMA Toolbox (S. Lariviere et *al.*): https://enigma-toolbox.readthedocs.io/en/latest/ 
-- Python >= 3.8
 - R >= 4.1.1
-
+- Python >= 3.8
+- ENIGMA Toolbox (S. Lariviere et *al.*): https://enigma-toolbox.readthedocs.io/en/latest/
+- HYDRA (E. Varol, A. Sotiras, C. Davatzikos): https://github.com/evarol/HYDRA
 
 ## Bibliography
 
-- S. Lariviere et *al.*, Network-based atrophy modeling in the common epilepsies: A worldwide ENIGMA study. Sci Adv 6,  (2020).
+- S. Larivière et *al.*, The ENIGMA Toolbox: multiscale neural contextualization of multisite neuroimaging datasets. Nature Methods 18, 698–700 (2021).
 - S. Garbarino et *al.*, Differences in topological progression profile among neurodegenerative diseases from imaging data. Elife 8,  (2019).
 - A. Vo et *al.*, Network connectivity and local transcriptomic vulnerability underpin cortical atrophy progression in Parkinson's disease. Neuroimage Clin 40, 103523 (2023).
+- E. Varol, A. Sotiras, C. Davatzikos, HYDRA: Revealing heterogeneity of imaging and genetic patterns through a multiple max-margin discriminative analysis framework. Neuroimage 145, 346–364 (2017).
 
 ## Citation
 
