@@ -17,7 +17,8 @@ This repository contains the code associated with our research paper to reproduc
 
 Clinical progression is strongly linked to grey matter atrophy in multiple sclerosis (MS), detectable early on MRI and progressing non-randomly across the brain. However, the mechanisms driving its spatio-temporal progression and individual variability remain unclear. Using MRIs from 2,187 participants, alongside normative data, we systematically investigated network-based mechanisms underlying MS-related atrophy. Regional atrophy colocalised with functional cortical hubs, supporting the *nodal stress* hypothesis, and propagated along anatomical and functional connections, consistent with *transneuronal degeneration*. *Lesional disconnection* and *transcriptomic vulnerability* played marginal roles. Patient- and subgroup-level analyses revealed that network-based mechanisms are specifically linked to MS-related neurodegeneration and may operate differently in distinct subtypes or disease phases. Atrophy patterns were anchored to the connectivity profiles of disease epicentres involving the visual, sensorimotor, and temporal cortices, and the hippocampi and thalami. Network-based measures enhanced the prediction of future atrophy progression in individual with MS, providing a mechanistic framework to understand neurodegeneration in MS.
 
-![Fig. 1. Study workflow. (a) The study integrated three datasets: MS Cohort and healthy controls, including T1-weighted (T1w) and FLAIR scans; the Human Connectome Project (HCP), providing structural and functional connectomes (SC/FC); and the Allen Human Brain Atlas (AHBA), providing gene expression data. (b) In the MS cohort, lesions were segmented using LST-AI and subsequently T1w scans were filled with NiftySeg. Disconnectome matrices were computed using the Lesion Quantification Toolkit (LQT), while cortical thickness and subcortical volumes were extracted with FreeSurfer. Atrophy maps were generated using Cohen’s d, and connectome and gene expression data were preprocessed using the ENIGMA toolbox. Neighbouring atrophy maps were obtained as described in Methods (A. Vo et *al*). (c) Statistical analyses included spin permutation tests (n=10,000) to assess spatial correspondence. Created using https://BioRender.com and adapted from (S. Lariviere et *al*, S. Gabarino et *al*, and A.Vo et *al*).](figures/Fig1.png)
+![Fig. 1. ](figures/Fig1.png)
+**Fig. 1. Study workflow.** (a) The study integrated three datasets: MS Cohort and healthy controls, including T1-weighted (T1w) and FLAIR scans; the Human Connectome Project (HCP), providing structural and functional connectomes (SC/FC); and the Allen Human Brain Atlas (AHBA), providing gene expression data. (b) In the MS cohort, lesions were segmented using LST-AI and subsequently T1w scans were filled with NiftySeg. Disconnectome matrices were computed using the Lesion Quantification Toolkit (LQT), while cortical thickness and subcortical volumes were extracted with FreeSurfer. Atrophy maps were generated using Cohen’s d, and connectome and gene expression data were preprocessed using the ENIGMA toolbox. Neighbouring atrophy maps were obtained as described in Methods (A. Vo et *al*). (c) Statistical analyses included spin permutation tests (n=10,000) to assess spatial correspondence. Created using https://BioRender.com and adapted from (S. Lariviere et *al*, S. Gabarino et *al*, and A.Vo et *al*).
 
 ## Repository Structure
 
@@ -48,13 +49,13 @@ Clinical progression is strongly linked to grey matter atrophy in multiple scler
 
 - Python >= 3.8
 - R >= 4.1.1
-- ENIGMA Toolbox (S. Lariviere et *al*): https://enigma-toolbox.readthedocs.io/en/latest/ 
+- ENIGMA Toolbox (S. Lariviere et *al.*): https://enigma-toolbox.readthedocs.io/en/latest/ 
 
 ## Bibliography
 
-- S. Lariviere et al., Network-based atrophy modeling in the common epilepsies: A worldwide ENIGMA study. Sci Adv 6,  (2020).
-- S. Garbarino et al., Differences in topological progression profile among neurodegenerative diseases from imaging data. Elife 8,  (2019).
-- A. Vo et al., Network connectivity and local transcriptomic vulnerability underpin cortical atrophy progression in Parkinson's disease. Neuroimage Clin 40, 103523 (2023).
+- S. Lariviere et *al.*, Network-based atrophy modeling in the common epilepsies: A worldwide ENIGMA study. Sci Adv 6,  (2020).
+- S. Garbarino et *al.*, Differences in topological progression profile among neurodegenerative diseases from imaging data. Elife 8,  (2019).
+- A. Vo et *al.*, Network connectivity and local transcriptomic vulnerability underpin cortical atrophy progression in Parkinson's disease. Neuroimage Clin 40, 103523 (2023).
 
 ## Citation
 
