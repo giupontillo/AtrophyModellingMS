@@ -66,7 +66,7 @@ Clinical progression is strongly linked to grey matter atrophy in multiple scler
 If you use this code or data in your research, please cite our paper:
 
 ```bibtex
-@article{YourName2026preprint,
+@article{NAM2026,
   title   = {The Role of Network Connectivity and Transcriptomic Vulnerability in Shaping Grey Matter Atrophy in Multiple Sclerosis. },
   author  = {Mar Barrantes-Cepas, Mario Tranfa, David R. van Nederpelt, Ismail Koubiyr, Luigi Lorenzini, Birgit Helmlinger, Stefan Ropele, Daniela Pinter, Christian Enzinger, Tomas Uher, Manuela Vaneckova, Joep Killestein, Eva M.M. Strijbis, Martijn D. Steenwijk, Hugo Vrenken, Frederik Barkhof, Menno M. Schoonheim, Giuseppe Pontillo},
   journal = {medRxiv},
