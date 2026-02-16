@@ -1,9 +1,9 @@
 # The Role of Network Connectivity and Transcriptomic Vulnerability in Shaping Grey Matter Atrophy in Multiple Sclerosis
 
 [![Paper Status](https://img.shields.io/badge/Paper-Under%20Review-yellow)]() 
-[![Preprint DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15745212.svg)](https://doi.org/10.64898/2026.02.13.26346243) 
-[![Github repo DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15745212.svg)](https://zenodo.org/records/18632256)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)]()
+[![Preprint](https://img.shields.io/badge/Preprint-DOI%3A10.1101%2F2024.01.01.123456-blue)](https://doi.org/10.64898/2026.02.13.26346243) 
+[![Github repo DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.123456.svg)](https://zenodo.org/records/18632256)
+[![License](https://img.shields.io/badge/License-MIT-orange.svg)]()
 
 This repository contains the code associated with our research paper to reproduce the results presented in the manuscript: 
 
@@ -66,12 +66,13 @@ Clinical progression is strongly linked to grey matter atrophy in multiple scler
 If you use this code or data in your research, please cite our paper:
 
 ```bibtex
-@article{YourName2026,
-  title={TITLE},
-  author={[Author 1] and [Author 2] and [Author 3]},
-  journal={[Journal Name]},
-  year={2026},
-  note={Under Review}
+@article{YourName2026preprint,
+  title   = {The Role of Network Connectivity and Transcriptomic Vulnerability in Shaping Grey Matter Atrophy in Multiple Sclerosis. },
+  author  = {Mar Barrantes-Cepas, Mario Tranfa, David R. van Nederpelt, Ismail Koubiyr, Luigi Lorenzini, Birgit Helmlinger, Stefan Ropele, Daniela Pinter, Christian Enzinger, Tomas Uher, Manuela Vaneckova, Joep Killestein, Eva M.M. Strijbis, Martijn D. Steenwijk, Hugo Vrenken, Frederik Barkhof, Menno M. Schoonheim, Giuseppe Pontillo},
+  journal = {medRxiv},
+  year    = {2026},
+  doi     = {10.64898/2026.02.13.26346243v1},
+  url     = {https://doi.org/10.64898/2026.02.13.26346243v1}
 }
 ```
 
