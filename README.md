@@ -1,7 +1,8 @@
 # The Role of Network Connectivity and Transcriptomic Vulnerability in Shaping Grey Matter Atrophy in Multiple Sclerosis
 
 [![Paper Status](https://img.shields.io/badge/Paper-Under%20Review-yellow)]() 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15745212.svg)](https://zenodo.org/records/18632256)
+[![Preprint DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15745212.svg)](https://doi.org/10.64898/2026.02.13.26346243) 
+[![Github repo DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15745212.svg)](https://zenodo.org/records/18632256)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)]()
 
 This repository contains the code associated with our research paper to reproduce the results presented in the manuscript: 
